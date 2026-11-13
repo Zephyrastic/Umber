@@ -124,6 +124,55 @@ local AimConfig = { Assist = { Enabled = false, Types = { All = true }, FOV = 40
 local WorldOriginal = { Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
 	Brightness = Lighting.Brightness, FogStart = Lighting.FogStart, FogEnd = Lighting.FogEnd
 }
+local AtmosphereOriginal = setmetatable({}, { __mode = "k" })
+local FogRestore = { Start = WorldOriginal.FogStart, End = WorldOriginal.FogEnd }
+local FogCaptured = false
+local function CaptureAtmosphere(Atmosphere)
+	local Entry = AtmosphereOriginal[Atmosphere]
+	if not Entry then
+		Entry = { Density = Atmosphere.Density, Haze = Atmosphere.Haze }
+		AtmosphereOriginal[Atmosphere] = Entry
+	end
+	return Entry
+end
+local function ClearFog()
+	if not FogCaptured then
+		FogCaptured = true
+		FogRestore.Start = Lighting.FogStart
+		FogRestore.End = Lighting.FogEnd
+	end
+	if Lighting.FogStart ~= 0 then
+		Lighting.FogStart = 0
+	end
+	if Lighting.FogEnd ~= 100000 then
+		Lighting.FogEnd = 100000
+	end
+	local Atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	if Atmosphere then
+		CaptureAtmosphere(Atmosphere)
+		if Atmosphere.Density ~= 0 then
+			Atmosphere.Density = 0
+		end
+		if Atmosphere.Haze ~= 0 then
+			Atmosphere.Haze = 0
+		end
+	end
+end
+local function RestoreFog()
+	if not FogCaptured then
+		return
+	end
+	Lighting.FogStart = FogRestore.Start
+	Lighting.FogEnd = FogRestore.End
+	FogCaptured = false
+	for Atmosphere, Entry in AtmosphereOriginal do
+		if Atmosphere.Parent then
+			Atmosphere.Density = Entry.Density
+			Atmosphere.Haze = Entry.Haze
+		end
+	end
+	table.clear(AtmosphereOriginal)
+end
 local WorldConfig = { Fullbright = false, NoFog = false, Ambient = WorldOriginal.Ambient,
 	OutdoorAmbient = WorldOriginal.OutdoorAmbient, Brightness = WorldOriginal.Brightness
 }
@@ -141,19 +190,23 @@ local function ApplyWorldLighting()
 		Lighting.Brightness = WorldConfig.Brightness
 	end
 	if WorldConfig.NoFog then
-		Lighting.FogStart = 0
-		Lighting.FogEnd = 1000000
+		ClearFog()
 	else
-		Lighting.FogStart = WorldOriginal.FogStart
-		Lighting.FogEnd = WorldOriginal.FogEnd
+		RestoreFog()
 	end
 end
 local function RestoreWorldLighting()
 	Lighting.Ambient = WorldOriginal.Ambient
 	Lighting.OutdoorAmbient = WorldOriginal.OutdoorAmbient
 	Lighting.Brightness = WorldOriginal.Brightness
-	Lighting.FogStart = WorldOriginal.FogStart
-	Lighting.FogEnd = WorldOriginal.FogEnd
+	RestoreFog()
+end
+local function GuardWorldFog()
+	local _sc4 = Unloaded
+	if if Unloaded then _sc4 else not WorldConfig.NoFog then
+		return
+	end
+	ClearFog()
 end
 local ZombieConfig = { Enabled = false, Types = { All = true }, Box = true, BoxStyle = "Box",
 	BoxColor = Color3.fromRGB(164, 91, 38), Chams = false, ChamsColor = Color3.fromRGB(200, 80, 40),
@@ -343,11 +396,11 @@ local function ProjectModel(Model, Camera)
 	local Visible = false
 	local AllFront = true
 	for Index = 0, 7 do
-		local _t1073 = Index % 2
+		local _t1159 = Index % 2
 		local _sc5 = math.floor(Index / 2) % 2 == 0 and 0.5 or -0.5
 		local _sc6 = Index < 4 and 0.5 or -0.5
 		local World = BoxCFrame
-			* Vector3.new(BoxSize.X * (_t1073 == 0 and 0.5 or -0.5), BoxSize.Y * _sc5, BoxSize.Z * _sc6)
+			* Vector3.new(BoxSize.X * (_t1159 == 0 and 0.5 or -0.5), BoxSize.Y * _sc5, BoxSize.Z * _sc6)
 		local Point = Camera:WorldToViewportPoint(World)
 		ProjectCorners[Index + 1] = World
 		ProjectDepth[Index + 1] = Point.Z
@@ -1561,12 +1614,12 @@ do
 					local Entry_Text = Entry.Text
 					local _sc6 = Remaining < 1
 					if _sc6 then
-						local _t4284 = Set
+						local _t4370 = Set
 						_sc6 = Color3.fromRGB(255, 70, 70)
 					end
 					local _sc5 = _sc6
 					if not _sc6 then
-						local _t4284 = Set
+						local _t4370 = Set
 						_sc5 = Color3.fromRGB(255, 170, 80)
 					end
 					Set(Entry_Text, "Color", _sc5)
@@ -1779,6 +1832,7 @@ do
 	Track(RunService.RenderStepped:Connect(UpdateHitboxVisuals))
 	Track(RunService.RenderStepped:Connect(UpdateThrowables))
 	Track(RunService.RenderStepped:Connect(UpdateBlastRings))
+	Track(RunService.RenderStepped:Connect(GuardWorldFog))
 	Track(RunService.Heartbeat:Connect(SpoofGrabPosition))
 	Track(RunService.Heartbeat:Connect(ApplySwingSpeed))
 	pcall(function()
