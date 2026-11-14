@@ -1,16 +1,38 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
+local StarterGui = game:GetService("StarterGui")
+local Library
+local function Notify(Text, Duration)
+	Duration = Duration or 8
+	if Library and Library.Notify then
+		local Ok = pcall(Library.Notify, Library, { Title = "Umber", Description = Text, Time = Duration })
+		if Ok then
+			return
+		end
+	end
+	pcall(StarterGui.SetCore, StarterGui, "SendNotification", { Title = "Umber", Text = Text, Duration = Duration })
+end
 if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 local LocalPlayer = Players.LocalPlayer
 if not (LocalPlayer and LocalPlayer:WaitForChild("PlayerGui", 15)) then
-	warn("Umber: join a game before running this script.")
+	Notify("Join a game before running this script.")
 	return
 end
-if not (Drawing and loadstring and getgenv) then
-	warn("Umber: this executor is missing Drawing, loadstring or getgenv.")
+local Missing = {}
+if not Drawing then
+	table.insert(Missing, "Drawing")
+end
+if not loadstring then
+	table.insert(Missing, "loadstring")
+end
+if not getgenv then
+	table.insert(Missing, "getgenv")
+end
+if #Missing > 0 then
+	Notify("This executor is missing: " .. table.concat(Missing, ", "))
 	return
 end
 local Env = getgenv()
@@ -32,25 +54,32 @@ if not HookState then
 	Env.UmberHook = HookState
 end
 local BaseUrl = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local LastLoadError
 local function LoadModule(Path)
 	for _ = 1, 3 do
 		local Ok, Source = pcall(game.HttpGet, game, BaseUrl .. Path)
-		local _sc3 = Ok and loadstring(Source)
-		local Chunk = _sc3
-		if _sc3 then
-			local RunOk, Module = pcall(Chunk)
-			if RunOk and Module then
-				return Module
+		if not Ok then
+			LastLoadError = Path .. ": HttpGet failed: " .. tostring(Source)
+		else
+			local Chunk, CompileErr = loadstring(Source)
+			if not Chunk then
+				LastLoadError = Path .. ": compile failed: " .. tostring(CompileErr)
+			else
+				local RunOk, Module = pcall(Chunk)
+				if RunOk and Module then
+					return Module
+				end
+				LastLoadError = Path .. ": run failed: " .. tostring(Module)
 			end
 		end
 		task.wait(1)
 	end
 end
-local Library = LoadModule("Library.lua")
+Library = LoadModule("Library.lua")
 local ThemeManager = LoadModule("addons/ThemeManager.lua")
 local SaveManager = LoadModule("addons/SaveManager.lua")
 if not (Library and ThemeManager and SaveManager) then
-	warn("Umber: could not download Obsidian.")
+	Notify("Could not load Obsidian. " .. tostring(LastLoadError), 12)
 	return
 end
 local Options, Toggles = Library.Options, Library.Toggles
@@ -208,34 +237,9 @@ local function ApplyWorldLighting()
 		return
 	end
 	local Bright = WorldConfig.Fullbright
-	local _sc4 = Bright
-	if Bright then
-		local _t785 = Lighting
-		_sc4 = Color3.new(1, 1, 1)
-	end
-	local _sc3 = _sc4
-	if not _sc4 then
-		local _t785 = Lighting
-		_sc3 = WorldConfig.Ambient
-	end
-	Lighting.Ambient = _sc3
-	local _sc6 = Bright
-	if Bright then
-		local _t799 = Lighting
-		_sc6 = Color3.new(1, 1, 1)
-	end
-	local _sc5 = _sc6
-	if not _sc6 then
-		local _t799 = Lighting
-		_sc5 = WorldConfig.OutdoorAmbient
-	end
-	Lighting.OutdoorAmbient = _sc5
-	local _sc7 = Bright and 3
-	if not _sc7 then
-		local Lighting_v1 = Lighting
-		_sc7 = WorldConfig.Brightness
-	end
-	Lighting.Brightness = _sc7
+	Lighting.Ambient = Bright and Color3.new(1, 1, 1) or WorldConfig.Ambient
+	Lighting.OutdoorAmbient = Bright and Color3.new(1, 1, 1) or WorldConfig.OutdoorAmbient
+	Lighting.Brightness = Bright and 3 or WorldConfig.Brightness
 	if WorldConfig.NoFog then
 		ClearFog()
 	else
@@ -267,9 +271,9 @@ local function ApplyChargeSpeed()
 	end
 	SpeedModifier = nil
 	local Character = LocalPlayer.Character
-	local _sc4 = Character and Character:FindFirstChild("UserStates")
-	local States = _sc4
-	local _sc5 = _sc4 and States:FindFirstChild("SpeedController")
+	local _sc3 = Character and Character:FindFirstChild("UserStates")
+	local States = _sc3
+	local _sc5 = _sc3 and States:FindFirstChild("SpeedController")
 	local Module = _sc5
 	if _sc5 then
 		local Ok, Controller = pcall(require, Module)
@@ -295,9 +299,9 @@ local function ApplyChargeSpeed()
 end
 local function SpoofGrabPosition()
 	local Character = LocalPlayer.Character
-	local _sc3 = Character and Character:FindFirstChildOfClass("Humanoid")
-	local Humanoid = _sc3
-	if AntiGrabEnabled and _sc3 then
+	local _sc2 = Character and Character:FindFirstChildOfClass("Humanoid")
+	local Humanoid = _sc2
+	if AntiGrabEnabled and _sc2 then
 		Humanoid:Move(Vector3.new(0, 100000, 0))
 	end
 end
@@ -314,8 +318,8 @@ local function IsMeleeTool(Tool)
 	local Animations = Tool:FindFirstChild("Animations")
 	local _sc3 = Animations ~= nil
 	if _sc3 then
-		local _sc4_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
-		_sc3 = _sc4_s1 or Animations:FindFirstChild("Thrust") ~= nil
+		local _sc2_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
+		_sc3 = _sc2_s1 or Animations:FindFirstChild("Thrust") ~= nil
 	end
 	return _sc3
 end
@@ -328,9 +332,9 @@ local function ApplySwingSpeed()
 		return
 	end
 	local Character = LocalPlayer.Character
-	local _sc4 = Character and Character:FindFirstChildOfClass("Tool")
-	local Tool = _sc4
-	if not _sc4 or not IsMeleeTool(Tool) then
+	local _sc3 = Character and Character:FindFirstChildOfClass("Tool")
+	local Tool = _sc3
+	if not _sc3 or not IsMeleeTool(Tool) then
 		return
 	end
 	local Buff = SwingBuffs[Tool]
@@ -502,9 +506,9 @@ local function EnsureGui(Entry, Model)
 	if Entry.Gui and Entry.Gui.Holder.Parent then
 		return
 	end
-	local _sc4_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
-	local Head = _sc4_s1
-	if not _sc4_s1 then
+	local _sc3_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
+	local Head = _sc3_s1
+	if not _sc3_s1 then
 		return
 	end
 	local Holder = Instance.new("BillboardGui")
@@ -598,16 +602,16 @@ local function GetFuseRemaining(Model)
 		return nil
 	end
 	local FuseMarks_v1 = FuseMarks
-	local _sc4 = FuseMarks[Model]
-	FuseMarks_v1[Model] = _sc4 or os.clock()
+	local _t2007 = FuseMarks[Model]
+	FuseMarks_v1[Model] = _t2007 or os.clock()
 	return math.max(0, 3.5 - (os.clock() - FuseMarks[Model]))
 end
 local function RenderModel(Model, Kind, View)
 	local Config = Kind == "zombie" and ZombieConfig or PlayerConfig
 	local Cached = Tracked[Model]
-	local _sc3 = Cached and Cached.Humanoid
-	local Humanoid = _sc3
-	if not (_sc3 and Humanoid.Parent) then
+	local _sc2 = Cached and Cached.Humanoid
+	local Humanoid = _sc2
+	if not (_sc2 and Humanoid.Parent) then
 		Humanoid = Model:FindFirstChildOfClass("Humanoid")
 	end
 	if not Humanoid or Humanoid.Health <= 0 then
@@ -631,9 +635,9 @@ local function RenderModel(Model, Kind, View)
 		end
 	else
 		local Player = Players:FindFirstChild(Model.Name)
-		local displayName = Player and Player.DisplayName
-		local _sc10 = displayName
-		Label = if displayName then _sc10 else Model.Name
+		local _sc10 = Player and Player.DisplayName
+		local _sc10 = _sc10
+		Label = _sc10 or Model.Name
 	end
 	local MinX, MinY, MaxX, MaxY = ProjectModel(Model, View.Camera)
 	if not MinX then
@@ -650,7 +654,6 @@ local function RenderModel(Model, Kind, View)
 		local _sc10 = RootPos
 		local format = string.format
 		if RootPos then
-			local string_v1 = string
 			_sc10 = math.floor((RootPos - View.Position).Magnitude)
 		end
 		Label = format("%s [%dm]", Label, _sc10 or 0)
@@ -684,14 +687,14 @@ local function RenderModel(Model, Kind, View)
 		for Index = 1, 4 do
 			local X, Y = Index % 2 == 1 and MinX or MaxX, Index <= 2 and MinY or MaxY
 			local _t2165 = Index % 2
-			local _sc15 = Index <= 2 and 1 or -1
+			local _t2272 = Index <= 2
 			local Horizontal, Vertical = Corners[Index * 2 - 1], Corners[Index * 2]
 			Set(Horizontal, "Color", BoxColor)
 			Set(Horizontal, "From", Vector2.new(X, Y))
 			Set(Horizontal, "To", Vector2.new(X + (_t2165 == 1 and 1 or -1) * Length, Y))
 			Set(Vertical, "Color", BoxColor)
 			Set(Vertical, "From", Vector2.new(X, Y))
-			Set(Vertical, "To", Vector2.new(X, Y + _sc15 * Length))
+			Set(Vertical, "To", Vector2.new(X, Y + (_t2272 and 1 or -1) * Length))
 		end
 	end
 	Set(Entry.Tracer, "Visible", Config.Tracers)
@@ -739,17 +742,9 @@ local function RenderModel(Model, Kind, View)
 	if Config.Chams then
 		local Target = GetVisual(Model)
 		local Highlight = EnsureHighlight(Entry, Target)
-		local TypeColor_v1 = TypeColor
-		if not TypeColor then
-			local Set_v1 = Set
-			TypeColor_v1 = Config.ChamsColor
-		end
+		local TypeColor_v1 = TypeColor or Config.ChamsColor
 		Set(Highlight, "FillColor", TypeColor_v1)
-		local TypeColor_v2 = TypeColor
-		if not TypeColor then
-			local Set_v1 = Set
-			TypeColor_v2 = Config.ChamsColor
-		end
+		local TypeColor_v2 = TypeColor or Config.ChamsColor
 		Set(Highlight, "OutlineColor", TypeColor_v2)
 		Set(Highlight, "Enabled", true)
 		if Entry.SuppressTarget ~= Target or View.Now - Entry.SuppressAt >= 0.25 then
@@ -989,9 +984,8 @@ local function FindExpandedHit(Origin, Direction, Filter)
 end
 local function MakeHeadshot(Result, Origin, Direction)
 	local Part = Result.Instance
-	local _sc3_s1 = not Part or not Part.Parent
-	local _sc3_s2 = _sc3_s1 or Part.Parent.Name ~= "m_Zombie"
-	if _sc3_s2 or Part.Name == "Head" then
+	local _sc2_s1 = not Part or not Part.Parent
+	if _sc2_s1 or Part.Parent.Name ~= "m_Zombie" or Part.Name == "Head" then
 		return nil
 	end
 	if math.random() * 100 > MeleeConfig.Chance then
@@ -1087,9 +1081,9 @@ local function PickAimTarget(Camera)
 	local Center, Radius = Camera.ViewportSize * 0.5, GetFOVRadius(Camera, AimConfig.FOV)
 	local Best, BestDistance
 	for _, Model in Container:GetChildren() do
-		local _sc3 = Model:IsA("Model") and Model:FindFirstChildOfClass("Humanoid")
-		local Humanoid = _sc3
-		if _sc3 and Humanoid.Health > 0 and TypeAllowed(AimConfig.Types, Model) then
+		local _sc2 = Model:IsA("Model") and Model:FindFirstChildOfClass("Humanoid")
+		local Humanoid = _sc2
+		if _sc2 and Humanoid.Health > 0 and TypeAllowed(AimConfig.Types, Model) then
 			local Part = Model:FindFirstChild("Head")
 			if not (Part and Part:IsA("BasePart")) then
 				Part = Model:FindFirstChild("HumanoidRootPart")
@@ -1196,17 +1190,17 @@ local function ClearProjectileTimers()
 end
 local function TrackProjectile(Projectile)
 	local _sc3 = Unloaded
-	local _sc3_s1 = if Unloaded then _sc3 else not ThrowableConfig.MortarTimer
-	local _sc3_s2 = _sc3_s1 or not Projectile:IsA("ValueBase")
-	if _sc3_s2 or ProjectileTimers[Projectile] then
+	if (if Unloaded then _sc3 else not ThrowableConfig.MortarTimer)
+		or not Projectile:IsA("ValueBase")
+		or ProjectileTimers[Projectile]
+	then
 		return
 	end
 	local Fuse, Start = Projectile:GetAttribute("FuseTimer"), Projectile:GetAttribute("Start")
 	local Character = LocalPlayer.Character
 	local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-	local _sc5_s1 = typeof(Fuse) ~= "number" or typeof(Start) ~= "Vector3"
-	local _sc5_s2 = _sc5_s1 or not Root
-	if _sc5_s2 or (Start - Root.Position).Magnitude > 12 then
+	local _t4027 = typeof(Fuse) ~= "number" or typeof(Start) ~= "Vector3"
+	if if _t4027 or not Root then _t4027 or not Root else (Start - Root.Position).Magnitude > 12 then
 		return
 	end
 	ProjectileTimers[Projectile] = { Text = CreateText(14), Fuse = Fuse, Started = time() }
@@ -1226,24 +1220,14 @@ local function UpdateProjectileTimers(Now)
 			UntrackProjectile(Projectile)
 		elseif Camera then
 			local Remaining = Entry.Fuse - (Now - Entry.Started)
-			local _sc3 = typeof(Projectile.Value) == "Vector3" and Camera:WorldToViewportPoint(Projectile.Value)
-			local Screen = _sc3
-			local _sc4 = _sc3 and Remaining > 0 and Screen.Z > 0
+			local _sc2 = typeof(Projectile.Value) == "Vector3" and Camera:WorldToViewportPoint(Projectile.Value)
+			local Screen = _sc2
+			local _sc4 = _sc2 and Remaining > 0 and Screen.Z > 0
 			Set(Entry.Text, "Visible", _sc4)
 			if _sc4 then
 				Set(Entry.Text, "Text", string.format("%.1f", Remaining))
 				local Entry_Text = Entry.Text
-				local _sc6 = Remaining < 1
-				if _sc6 then
-					local _t3985 = Set
-					_sc6 = Color3.fromRGB(255, 70, 70)
-				end
-				local _sc5 = _sc6
-				if not _sc6 then
-					local _t3985 = Set
-					_sc5 = Color3.fromRGB(255, 170, 80)
-				end
-				Set(Entry_Text, "Color", _sc5)
+				Set(Entry_Text, "Color", Remaining < 1 and Color3.fromRGB(255, 70, 70) or Color3.fromRGB(255, 170, 80))
 				Set(Entry.Text, "Position", Vector2.new(Screen.X, Screen.Y - 20))
 			end
 		end
@@ -1260,8 +1244,8 @@ local function SolveThrow(Start, Target, Speed)
 	local Gravity, Speed2 = -workspace.Gravity, Speed * Speed
 	if Flat <= 0 then
 		local Vector3_new = Vector3.new
-		local _sc4 = DeltaY < 0 and -Speed
-		return Vector3_new(0, _sc4 or DeltaY > 0 and Speed or 0, 0)
+		local _sc2 = DeltaY < 0 and -Speed
+		return Vector3_new(0, _sc2 or DeltaY > 0 and Speed or 0, 0)
 	end
 	local Scale = Flat / (2 * (Flat + DeltaY * DeltaY))
 	local Root = Speed2 * (2 * Gravity * DeltaY + Speed2) - Gravity * Gravity * Flat
@@ -1280,9 +1264,9 @@ local function SolveThrow(Start, Target, Speed)
 end
 local function UpdateTrajectory()
 	local Character, Camera = LocalPlayer.Character, workspace.CurrentCamera
-	local _sc3 = ThrowableConfig.Trajectory and Character and Character:FindFirstChildOfClass("Tool")
-	local Tool = _sc3
-	local _sc4 = _sc3 and Tool:FindFirstChild("Configuration")
+	local _sc2 = ThrowableConfig.Trajectory and Character and Character:FindFirstChildOfClass("Tool")
+	local Tool = _sc2
+	local _sc4 = _sc2 and Tool:FindFirstChild("Configuration")
 	local Configuration = _sc4
 	local Speed = _sc4 and Configuration:GetAttribute("ThrowSpeed")
 	local Delay = Configuration and Configuration:GetAttribute("ThrowDelay")
@@ -1292,13 +1276,13 @@ local function UpdateTrajectory()
 		_sc7 = _sc8_s1 or Character:FindFirstChild("HumanoidRootPart")
 	end
 	local Hand = _sc7
-	local _sc9 = _sc7
+	local _sc8 = _sc7
 		and Camera
 		and typeof(Speed) == "number"
 		and typeof(Delay) == "number"
 		and SolveThrow(Hand.Position, LocalMouse.Hit.Position, Speed)
-	local Velocity = _sc9
-	if not _sc9 then
+	local Velocity = _sc8
+	if not _sc8 then
 		HideTrajectory()
 		return
 	end
@@ -1322,7 +1306,7 @@ local function UpdateTrajectory()
 		local _t4315 = TrajectoryLines[Index]
 		local _sc10 = From.Z > 0 and To.Z > 0
 		local Line = _t4315
-		Set(Line, "Visible", _sc10)
+		Set(_t4315, "Visible", _sc10)
 		if _sc10 then
 			Set(Line, "Color", Color3.fromRGB(255, 170, 80))
 			Set(Line, "From", Vector2.new(From.X, From.Y))
@@ -1392,7 +1376,7 @@ local function RunSteps(Steps)
 		local Ok, Err = pcall(Step)
 		if not Ok and not Failed[Name] then
 			Failed[Name] = true
-			warn("Umber: " .. Name .. " failed: " .. tostring(Err))
+			Notify(Name .. " failed: " .. tostring(Err), 10)
 		end
 	end
 end
@@ -1412,7 +1396,7 @@ pcall(RunService.BindToRenderStep, RunService, "UmberAim", Enum.RenderPriority.C
 	local Ok, Err = pcall(UpdateAim)
 	if not Ok and not Failed.Aim then
 		Failed.Aim = true
-		warn("Umber: Aim failed: " .. tostring(Err))
+		Notify("Aim failed: " .. tostring(Err), 10)
 	end
 end)
 Library:OnUnload(Cleanup)
@@ -1465,12 +1449,7 @@ local function AddCommonESP(Group, Prefix, Config, Master, Noun, BoxColor)
 	AddFeature(Group, Prefix, Config, Master, "Box", "Box", "Box around each " .. Noun .. ".", true, BoxColor and "BoxColor", BoxColor, "Box Color")
 	AddDropdown(Group, Prefix .. "BoxStyle", Config, "BoxStyle", "Box Style", "Plain box, corner brackets, or a filled box.", { "Box", "Corner", "Filled Box" }, "Box")
 	AddFeature(Group, Prefix, Config, Master, "Chams", "Chams", "Colours the " .. Noun .. " model.", false, BoxColor and "ChamsColor", BoxColor, "Chams Color")
-	local _sc3 = BoxColor
-	if not BoxColor then
-		local AddFeature_v1 = AddFeature
-		_sc3 = Color3.fromRGB(164, 91, 38)
-	end
-	AddFeature(Group, Prefix, Config, Master, "Tracers", "Tracers", "Line from your screen to them.", false, "TracerColor", _sc3, "Tracer Color")
+	AddFeature(Group, Prefix, Config, Master, "Tracers", "Tracers", "Line from your screen to them.", false, "TracerColor", BoxColor or Color3.fromRGB(164, 91, 38), "Tracer Color")
 	AddFeature(Group, Prefix, Config, Master, "Names", "Names", "Name above the box.", false, "NameColor", Color3.fromRGB(255, 255, 255), "Name Color")
 	AddDropdown(Group, Prefix .. "NameStyle", Config, "NameStyle", "Name Display", "Text draws it, GUI is a label.", { "Text", "GUI", "Both" }, "Text")
 	AddFeature(Group, Prefix, Config, Master, "Health", "Health Bar", "Health under the name.", false, "HealthColor", Color3.fromRGB(90, 200, 90), "Health Color")
@@ -1690,5 +1669,5 @@ LoadingConfig = true
 local ConfigOk, ConfigErr = pcall(SaveManager.LoadAutoloadConfig, SaveManager)
 LoadingConfig = false
 if not ConfigOk then
-	warn("Umber: autoload config failed: " .. tostring(ConfigErr))
+	Notify("Autoload config failed: " .. tostring(ConfigErr), 10)
 end
