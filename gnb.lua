@@ -117,11 +117,6 @@ local LastESPUpdate = 0
 local LastVisualRefresh = 0
 local EspIdle = false
 local LoadingConfig = false
-local ZombieList = {}
-local PlayerList = {}
-local ZombieContainerRef
-local PlayerContainerRef
-local StatusesBuffer = {}
 local HitboxConfig = { Enabled = false, Size = 5, Part = "All", IgnoreBarrel = false, Show = false, Transparency = 0.9 }
 local MeleeConfig = { AutoHeadshot = false, Chance = 100, SwingSpeed = 1, SwingSpeedEnabled = false }
 local ThrowableConfig = { MortarTimer = false, Trajectory = false }
@@ -291,10 +286,10 @@ local function ApplyChargeSpeed()
 		return
 	end
 	local UserStates = Character:FindFirstChild("UserStates")
-	local _sc6 = UserStates and UserStates:FindFirstChild("SpeedController")
-	local Module = _sc6
+	local _sc5 = UserStates and UserStates:FindFirstChild("SpeedController")
+	local Module = _sc5
 	local Success, Result = false, nil
-	if _sc6 then
+	if _sc5 then
 		Success, Result = pcall(require, Module)
 	end
 	if Success then
@@ -322,9 +317,9 @@ local function SpoofGrabPosition()
 		return
 	end
 	local Character = LocalPlayer.Character
-	local _sc5 = Character and Character:FindFirstChildOfClass("Humanoid")
-	local Humanoid = _sc5
-	if not _sc5 then
+	local _sc4 = Character and Character:FindFirstChildOfClass("Humanoid")
+	local Humanoid = _sc4
+	if not _sc4 then
 		return
 	end
 	Humanoid:Move(Vector3.new(0, 100000, 0))
@@ -343,8 +338,8 @@ local function IsMeleeTool(Tool)
 	if not Animations then
 		return false
 	end
-	local _sc5_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
-	return _sc5_s1 or Animations:FindFirstChild("Thrust") ~= nil
+	local _sc4_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
+	return _sc4_s1 or Animations:FindFirstChild("Thrust") ~= nil
 end
 local function ApplySwingSpeed()
 	if Unloaded then
@@ -403,12 +398,9 @@ local function ProjectModel(Model, Camera)
 	for Index = 0, 7 do
 		local _t1159 = Index % 2
 		local _sc5 = math.floor(Index / 2) % 2 == 0 and 0.5 or -0.5
+		local _sc6 = Index < 4 and 0.5 or -0.5
 		local World = BoxCFrame
-			* Vector3.new(
-				BoxSize.X * (_t1159 == 0 and 0.5 or -0.5),
-				BoxSize.Y * _sc5,
-				BoxSize.Z * (Index < 4 and 0.5 or -0.5)
-			)
+			* Vector3.new(BoxSize.X * (_t1159 == 0 and 0.5 or -0.5), BoxSize.Y * _sc5, BoxSize.Z * _sc6)
 		local Point = Camera:WorldToViewportPoint(World)
 		ProjectCorners[Index + 1] = World
 		ProjectDepth[Index + 1] = Point.Z
@@ -581,9 +573,9 @@ local function EnsureGui(Entry, Model)
 	if Entry.Gui and Entry.Gui.Holder and Entry.Gui.Holder.Parent then
 		return Entry.Gui
 	end
-	local _sc6_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
-	local Head = _sc6_s1
-	if not _sc6_s1 then
+	local _sc5_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
+	local Head = _sc5_s1
+	if not _sc5_s1 then
 		return nil
 	end
 	local Holder = Instance.new("BillboardGui")
@@ -676,15 +668,15 @@ local function GetPlayerLabel(Model)
 	return Model.Name
 end
 local function GetStatuses(Model)
-	table.clear(StatusesBuffer)
+	local Statuses = {}
 	local UserStates = Model:FindFirstChild("UserStates")
 	if not UserStates then
-		return StatusesBuffer
+		return Statuses
 	end
 	if PlayerConfig.Infection then
 		local Infected = UserStates:FindFirstChild("Infected")
 		if Infected and typeof(Infected.Value) == "number" and Infected.Value > 0 then
-			table.insert(StatusesBuffer, { Text = string.format("Infection %d%%", math.floor(Infected.Value + 0.5)),
+			table.insert(Statuses, { Text = string.format("Infection %d%%", math.floor(Infected.Value + 0.5)),
 				Color = PlayerConfig.InfectionColor
 			})
 		end
@@ -692,31 +684,30 @@ local function GetStatuses(Model)
 	if PlayerConfig.Grabbed then
 		local Grabbed = UserStates:FindFirstChild("Grabbed")
 		if Grabbed and typeof(Grabbed.Value) == "number" and Grabbed.Value > 0 then
-			table.insert(StatusesBuffer, { Text = "Grabbed", Color = PlayerConfig.GrabbedColor })
+			table.insert(Statuses, { Text = "Grabbed", Color = PlayerConfig.GrabbedColor })
 		end
 	end
 	if PlayerConfig.Pinned then
 		local Pin = UserStates:FindFirstChild("Pin")
 		if Pin and typeof(Pin.Value) == "string" and Pin.Value ~= "None" and Pin.Value ~= "" then
 			local insert = table.insert
-			local StatusesBuffer_v1 = StatusesBuffer
-			local _t1951 = PinLabels[Pin.Value]
-			insert(StatusesBuffer_v1, { Text = _t1951 or Pin.Value, Color = PlayerConfig.PinnedColor })
+			local _sc5 = PinLabels[Pin.Value]
+			insert(Statuses, { Text = _sc5 or Pin.Value, Color = PlayerConfig.PinnedColor })
 		end
 	end
 	if PlayerConfig.Burning then
 		local Burning = Model:GetAttribute("Burning")
 		if Burning and Burning ~= 0 then
-			table.insert(StatusesBuffer, { Text = "Burning", Color = PlayerConfig.BurningColor })
+			table.insert(Statuses, { Text = "Burning", Color = PlayerConfig.BurningColor })
 		end
 	end
 	if PlayerConfig.BrokenLegs then
 		local BrokenLegs = UserStates:FindFirstChild("BrokenLegs")
 		if BrokenLegs and BrokenLegs.Value then
-			table.insert(StatusesBuffer, { Text = "Broken Legs", Color = PlayerConfig.BrokenLegsColor })
+			table.insert(Statuses, { Text = "Broken Legs", Color = PlayerConfig.BrokenLegsColor })
 		end
 	end
-	return StatusesBuffer
+	return Statuses
 end
 local function GetFuseRemaining(Model)
 	local State = Model:FindFirstChild("State")
@@ -735,9 +726,9 @@ local function HideEntry(Entry)
 	Set(Entry.Fill, "Visible", false)
 	Set(Entry.Box, "Visible", false)
 	for Index = 1, 8 do
-		local _sc5 = Entry.Corners and Entry.Corners[Index]
-		local Line = _sc5
-		if _sc5 then
+		local _sc4 = Entry.Corners and Entry.Corners[Index]
+		local Line = _sc4
+		if _sc4 then
 			Set(Line, "Visible", false)
 		end
 	end
@@ -762,22 +753,22 @@ local function RenderModel(Model, Kind, Seen, View)
 		return
 	end
 	local Cached = Tracked[Model]
-	local _sc5 = Cached and Cached.Humanoid
-	local HumanoidInstance = _sc5
-	if not _sc5 or not HumanoidInstance.Parent then
+	local _sc4 = Cached and Cached.Humanoid
+	local HumanoidInstance = _sc4
+	if not _sc4 or not HumanoidInstance.Parent then
 		HumanoidInstance = Model:FindFirstChildOfClass("Humanoid")
 	end
 	if not HumanoidInstance or HumanoidInstance.Health <= 0 then
 		return
 	end
-	local _sc8 = Cached and Cached.Root
-	local Root = _sc8
-	if not _sc8 or not Root.Parent then
+	local _sc7 = Cached and Cached.Root
+	local Root = _sc7
+	if not _sc7 or not Root.Parent then
 		Root = Model:FindFirstChild("HumanoidRootPart")
 	end
-	local _sc10 = Root and Root.Position
-	local RootPos = _sc10
-	if _sc10 and (RootPos - View.Position):Dot(View.Look) < -2 then
+	local _sc9 = Root and Root.Position
+	local RootPos = _sc9
+	if _sc9 and (RootPos - View.Position):Dot(View.Look) < -2 then
 		return
 	end
 	local Label, Type
@@ -854,7 +845,7 @@ local function RenderModel(Model, Kind, Seen, View)
 			for Index = 1, 4 do
 				local X = (Index == 1 or Index == 3) and Left or Right
 				local Y = Index <= 2 and Top or Bottom
-				local _t2407 = Index <= 2
+				local _sc12 = Index <= 2 and 1 or -1
 				local Horizontal = Corners[Index * 2 - 1]
 				local Vertical = Corners[Index * 2]
 				Set(Horizontal, "Color", BoxColor)
@@ -862,7 +853,7 @@ local function RenderModel(Model, Kind, Seen, View)
 				Set(Horizontal, "To", Vector2.new(X + ((Index == 1 or Index == 3) and 1 or -1) * Length, Y))
 				Set(Vertical, "Color", BoxColor)
 				Set(Vertical, "From", Vector2.new(X, Y))
-				Set(Vertical, "To", Vector2.new(X, Y + (_t2407 and 1 or -1) * Length))
+				Set(Vertical, "To", Vector2.new(X, Y + _sc12 * Length))
 			end
 		end
 	end
@@ -876,11 +867,7 @@ local function RenderModel(Model, Kind, Seen, View)
 	end
 	do
 		local ShowTextName = Config.Names and (Config.NameStyle == "Text" or Config.NameStyle == "Both")
-		local Names = Config.Names
-		if Names then
-			Names = Config.NameStyle == "GUI" or Config.NameStyle == "Both"
-		end
-		local ShowGuiName = Names
+		local ShowGuiName = Config.Names and (Config.NameStyle == "GUI" or Config.NameStyle == "Both")
 		local Health = Config.Health
 		if Health then
 			Health = Config.HealthStyle == "Text" or Config.HealthStyle == "Both"
@@ -937,10 +924,9 @@ local function RenderModel(Model, Kind, Seen, View)
 		Set(Highlight, "FillColor", HighlightColor)
 		Set(Highlight, "OutlineColor", HighlightColor)
 		Set(Highlight, "Enabled", true)
-		local SuppressTarget = Entry.SuppressTarget
-		local _sc12 = SuppressTarget ~= Target
-		_sc12 = if SuppressTarget ~= Target then _sc12 else View.Now - (Entry.SuppressAt or 0) >= 0.25
-		if _sc12 then
+		local _sc21 = Entry.SuppressTarget ~= Target
+		_sc21 = _sc21 or View.Now - (Entry.SuppressAt or 0) >= 0.25
+		if _sc21 then
 			Entry.SuppressTarget = Target
 			Entry.SuppressAt = View.Now
 			SuppressHighlights(Entry, Target, Highlight)
@@ -1031,14 +1017,22 @@ local function UpdateESP()
 	local Seen = RenderSeen
 	table.clear(Seen)
 	if ZombieConfig.Enabled then
-		for Model in ZombieList do
-			RenderModel(Model, "zombie", Seen, View)
+		local Container = workspace:FindFirstChild("Zombies")
+		if Container then
+			for _, Model in Container:GetChildren() do
+				if Model:IsA("Model") then
+					RenderModel(Model, "zombie", Seen, View)
+				end
+			end
 		end
 	end
 	if PlayerConfig.Enabled then
-		for Model in PlayerList do
-			if Model ~= LocalPlayer.Character then
-				RenderModel(Model, "player", Seen, View)
+		local Container = workspace:FindFirstChild("Players")
+		if Container then
+			for _, Model in Container:GetChildren() do
+				if Model:IsA("Model") and Model ~= LocalPlayer.Character then
+					RenderModel(Model, "player", Seen, View)
+				end
 			end
 		end
 	end
@@ -1109,12 +1103,13 @@ local function UpdateBlastRings()
 	end
 	LastBlastRing = Now
 	local Camera = workspace.CurrentCamera
-	if not Camera then
+	local Container = workspace:FindFirstChild("Zombies")
+	if not Camera or not Container then
 		return
 	end
 	local Seen = {}
-	for Model in ZombieList do
-		if not (IsBarrel(Model) and GetFuseRemaining(Model)) then
+	for _, Model in Container:GetChildren() do
+		if not (Model:IsA("Model") and IsBarrel(Model) and GetFuseRemaining(Model)) then
 			continue
 		end
 		Seen[Model] = true
@@ -1158,17 +1153,18 @@ local function RefreshHitboxParts()
 	end
 	HitboxPartsStamp = Now
 	local Camera = workspace.CurrentCamera
+	local Container = workspace:FindFirstChild("Zombies")
 	local Names = HitboxPartNames[HitboxConfig.Part]
 	local List = {}
-	if Camera and ZombieContainerRef then
+	if Camera and Container then
 		local Matched = {}
 		for _, Child in Camera:GetChildren() do
 			local Orig = Child:FindFirstChild("Orig")
-			if Orig and Orig:IsA("ObjectValue") and Orig.Value and Orig.Value:IsDescendantOf(ZombieContainerRef) then
+			if Orig and Orig:IsA("ObjectValue") and Orig.Value and Orig.Value:IsDescendantOf(Container) then
 				Matched[Child] = Orig.Value
 			end
 		end
-		for Model in ZombieList do
+		for _, Model in Container:GetChildren() do
 			local Ref = Model:FindFirstChild("ClientRef")
 			if Ref and Ref:IsA("ObjectValue") and Ref.Value and Ref.Value.Parent == Camera then
 				Matched[Ref.Value] = Matched[Ref.Value] or Model
@@ -1289,24 +1285,27 @@ local function GetAimPart(Model)
 end
 local function PickAimTarget(Config)
 	local Camera = workspace.CurrentCamera
-	if not Camera then
+	local Container = workspace:FindFirstChild("Zombies")
+	if not Camera or not Container then
 		return nil
 	end
 	local Center = Camera.ViewportSize * 0.5
 	local Radius = GetFOVRadius(Camera, Config.FOV)
 	local Best, BestDistance
-	for Model in ZombieList do
-		local Humanoid = Model:FindFirstChildOfClass("Humanoid")
-		if Humanoid and Humanoid.Health > 0 and IsAimType(Config, Model) then
-			local Part = GetAimPart(Model)
-			if Part then
-				local Screen, OnScreen = Camera:WorldToViewportPoint(Part.Position)
-				if OnScreen then
-					local Distance = (Vector2.new(Screen.X, Screen.Y) - Center).Magnitude
-					if Distance <= Radius then
-						if not BestDistance or Distance < BestDistance then
-							Best = { Model = Model, Position = Part.Position }
-							BestDistance = Distance
+	for _, Model in Container:GetChildren() do
+		if Model:IsA("Model") then
+			local Humanoid = Model:FindFirstChildOfClass("Humanoid")
+			if Humanoid and Humanoid.Health > 0 and IsAimType(Config, Model) then
+				local Part = GetAimPart(Model)
+				if Part then
+					local Screen, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+					if OnScreen then
+						local Distance = (Vector2.new(Screen.X, Screen.Y) - Center).Magnitude
+						if Distance <= Radius then
+							if not BestDistance or Distance < BestDistance then
+								Best = { Model = Model, Position = Part.Position }
+								BestDistance = Distance
+							end
 						end
 					end
 				end
@@ -1340,8 +1339,8 @@ end
 local function UpdateFOVCircle(Name, Config, Color)
 	local Circle = EnsureFOVCircle(Name)
 	local Camera = workspace.CurrentCamera
-	local _sc5_s1 = not Camera or not Config.Enabled
-	if _sc5_s1 or not Config.ShowFOV then
+	local _sc4_s1 = not Camera or not Config.Enabled
+	if _sc4_s1 or not Config.ShowFOV then
 		Set(Circle, "Visible", false)
 		return
 	end
@@ -1375,8 +1374,9 @@ local function UpdateAim()
 end
 local function MakeHeadshot(Result, Origin, Direction)
 	local Part = Result.Instance
-	local _sc5_s1 = not Part or not Part.Parent
-	if _sc5_s1 or Part.Parent.Name ~= "m_Zombie" or Part.Name == "Head" then
+	local _sc4_s1 = not Part or not Part.Parent
+	local _sc4_s2 = _sc4_s1 or Part.Parent.Name ~= "m_Zombie"
+	if _sc4_s2 or Part.Name == "Head" then
 		return nil
 	end
 	if math.random() * 100 > MeleeConfig.Chance then
@@ -1400,9 +1400,7 @@ local function ProcessMeleeRay(Origin, Direction, Params, Built)
 		return Built
 	end
 	local Filter = Params.FilterDescendantsInstances
-	local _sc6 = not Filter
-	_sc6 = _sc6 or not rawequal(Filter[1], ZombieContainerRef)
-	if _sc6 then
+	if not Filter or not rawequal(Filter[1], workspace:FindFirstChild("Zombies")) then
 		return Built
 	end
 	local Result = Built
@@ -1452,7 +1450,11 @@ local function InstallHitboxHook()
 			return Built
 		end)
 	end)
-	if Success and typeof(Result) == "function" then
+	local _sc5 = Success
+	if Success then
+		_sc5 = typeof(Result) == "function"
+	end
+	if _sc5 then
 		OldNamecall = Result
 		Previous = Result
 	end
@@ -1562,9 +1564,9 @@ do
 		end
 		local Start = Projectile:GetAttribute("Start")
 		local Character = LocalPlayer.Character
-		local _sc7 = Character and Character:FindFirstChild("HumanoidRootPart")
-		local Root = _sc7
-		if typeof(Start) ~= "Vector3" or not _sc7 then
+		local _sc6 = Character and Character:FindFirstChild("HumanoidRootPart")
+		local Root = _sc6
+		if typeof(Start) ~= "Vector3" or not _sc6 then
 			return
 		end
 		if (Start - Root.Position).Magnitude > 12 then
@@ -1610,17 +1612,17 @@ do
 					Set(Entry.Text, "Visible", true)
 					Set(Entry.Text, "Text", string.format("%.1f", Remaining))
 					local Entry_Text = Entry.Text
-					local _sc7 = Remaining < 1
-					if _sc7 then
-						local _t4338 = Set
-						_sc7 = Color3.fromRGB(255, 70, 70)
+					local _sc6 = Remaining < 1
+					if _sc6 then
+						local _t4370 = Set
+						_sc6 = Color3.fromRGB(255, 70, 70)
 					end
-					local _sc6 = _sc7
-					if not _sc7 then
-						local _t4338 = Set
-						_sc6 = Color3.fromRGB(255, 170, 80)
+					local _sc5 = _sc6
+					if not _sc6 then
+						local _t4370 = Set
+						_sc5 = Color3.fromRGB(255, 170, 80)
 					end
-					Set(Entry_Text, "Color", _sc6)
+					Set(Entry_Text, "Color", _sc5)
 					Set(Entry.Text, "Position", Vector2.new(Screen.X, Screen.Y - 20))
 				else
 					Set(Entry.Text, "Visible", false)
@@ -1657,9 +1659,7 @@ do
 		local Gravity = -workspace.Gravity
 		local Speed2 = Speed * Speed
 		if Flat <= 0 then
-			local Vector3_new = Vector3.new
-			local _sc6 = DeltaY < 0 and -Speed
-			return Vector3_new(0, _sc6 or DeltaY > 0 and Speed or 0, 0)
+			return Vector3.new(0, DeltaY < 0 and -Speed or DeltaY > 0 and Speed or 0, 0)
 		end
 		local Scale = Flat / (2 * (Flat + DeltaY * DeltaY))
 		local Root = Speed2 * (2 * Gravity * DeltaY + Speed2) - Gravity * Gravity * Flat
@@ -1678,33 +1678,27 @@ do
 		end
 		return Vector3.new(DeltaX / FlatRoot * math.sqrt(High), Vertical, DeltaZ / FlatRoot * math.sqrt(High))
 	end
-	local LastTrajectory = 0
 	local function UpdateTrajectory()
 		if not ThrowableConfig.Trajectory then
 			HideTrajectory()
 			return
 		end
-		local Now = time()
-		if Now - LastTrajectory < 1 / 30 then
-			return
-		end
-		LastTrajectory = Now
 		local Character = LocalPlayer.Character
-		local _sc5 = Character and Character:FindFirstChildOfClass("Tool")
-		local Tool = _sc5
-		local _sc6 = _sc5 and Tool:FindFirstChild("Configuration")
-		local Configuration = _sc6
-		local Speed = _sc6 and Configuration:GetAttribute("ThrowSpeed")
+		local _sc4 = Character and Character:FindFirstChildOfClass("Tool")
+		local Tool = _sc4
+		local _sc5 = _sc4 and Tool:FindFirstChild("Configuration")
+		local Configuration = _sc5
+		local Speed = _sc5 and Configuration:GetAttribute("ThrowSpeed")
 		local Delay = Configuration and Configuration:GetAttribute("ThrowDelay")
 		local Camera = workspace.CurrentCamera
 		if typeof(Speed) ~= "number" or typeof(Delay) ~= "number" or not Camera then
 			HideTrajectory()
 			return
 		end
-		local _sc10_s1 = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
-		local _sc11 = _sc10_s1 or Character:FindFirstChild("HumanoidRootPart")
-		local Hand = _sc11
-		if not _sc11 then
+		local _sc9_s1 = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
+		local _sc9_s2 = _sc9_s1 or Character:FindFirstChild("HumanoidRootPart")
+		local Hand = _sc9_s2
+		if not _sc9_s2 then
 			HideTrajectory()
 			return
 		end
@@ -1771,39 +1765,6 @@ do
 		Track(Folder.ChildAdded:Connect(TrackProjectile))
 		Track(Folder.ChildRemoved:Connect(UntrackProjectile))
 	end)
-	task.spawn(function()
-		ZombieContainerRef = workspace:WaitForChild("Zombies", 60)
-		PlayerContainerRef = workspace:WaitForChild("Players", 60)
-		if not ZombieContainerRef or not PlayerContainerRef then
-			return
-		end
-		for _, m in ZombieContainerRef:GetChildren() do
-			if m:IsA("Model") then
-				ZombieList[m] = true
-			end
-		end
-		for _, m in PlayerContainerRef:GetChildren() do
-			if m:IsA("Model") then
-				PlayerList[m] = true
-			end
-		end
-		Track(ZombieContainerRef.ChildAdded:Connect(function(m)
-			if m:IsA("Model") then
-				ZombieList[m] = true
-			end
-		end))
-		Track(ZombieContainerRef.ChildRemoved:Connect(function(m)
-			ZombieList[m] = nil
-		end))
-		Track(PlayerContainerRef.ChildAdded:Connect(function(m)
-			if m:IsA("Model") then
-				PlayerList[m] = true
-			end
-		end))
-		Track(PlayerContainerRef.ChildRemoved:Connect(function(m)
-			PlayerList[m] = nil
-		end))
-	end)
 	local function Cleanup()
 		Unloaded = true
 		for _, Connection in Connections do
@@ -1818,8 +1779,6 @@ do
 		table.clear(Tracked)
 		table.clear(Visuals)
 		table.clear(FuseMarks)
-		table.clear(ZombieList)
-		table.clear(PlayerList)
 		ClearHitboxVisuals()
 		RemoveHitboxHook()
 		ClearProjectileTimers()
@@ -1869,13 +1828,11 @@ do
 		end
 	end
 	Track(LocalPlayer.CharacterAdded:Connect(BindCharacter))
-	Track(RunService.RenderStepped:Connect(function()
-		UpdateESP()
-		UpdateHitboxVisuals()
-		UpdateThrowables()
-		UpdateBlastRings()
-		GuardWorldFog()
-	end))
+	Track(RunService.RenderStepped:Connect(UpdateESP))
+	Track(RunService.RenderStepped:Connect(UpdateHitboxVisuals))
+	Track(RunService.RenderStepped:Connect(UpdateThrowables))
+	Track(RunService.RenderStepped:Connect(UpdateBlastRings))
+	Track(RunService.RenderStepped:Connect(GuardWorldFog))
 	Track(RunService.Heartbeat:Connect(SpoofGrabPosition))
 	Track(RunService.Heartbeat:Connect(ApplySwingSpeed))
 	pcall(function()
@@ -1896,7 +1853,7 @@ MovementGroup:AddToggle("WalkSpeedToggle", { Text = "Walkspeed Toggle",
 	end
 })
 MovementGroup:AddSlider("WalkSpeedValue", { Text = "Walk Speed", Tooltip = "How fast you move while the toggle is on.", Default = 55, Min = 16,
-	Max = 100, Rounding = 0,
+	Max = 70, Rounding = 0,
 	["Callback"] = function(Value)
 		ChargeValue = Value
 		if ChargeSpeed then
