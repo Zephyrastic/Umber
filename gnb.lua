@@ -1,63 +1,59 @@
 local Players = game:GetService("Players")
-local JoinDeadline = tick() + 15
-while tick() < JoinDeadline do
-	local Current = Players.LocalPlayer
-	if Current and Current:FindFirstChild("PlayerGui") then
-		break
-	end
-	task.wait()
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+if not game:IsLoaded() then
+	game.Loaded:Wait()
 end
-local JoinedPlayer = Players.LocalPlayer
-if not JoinedPlayer or not JoinedPlayer:FindFirstChild("PlayerGui") then
+local LocalPlayer = Players.LocalPlayer
+if not (LocalPlayer and LocalPlayer:WaitForChild("PlayerGui", 15)) then
 	warn("Umber: join a game before running this script.")
 	return
 end
-local PreviousUnload = getgenv().UmberUnload
-if typeof(PreviousUnload) == "function" then
-	pcall(PreviousUnload)
+if not (Drawing and loadstring and getgenv) then
+	warn("Umber: this executor is missing Drawing, loadstring or getgenv.")
+	return
 end
-local PreviousLibrary = getgenv().Library
-if PreviousLibrary
-	and PreviousLibrary.Unload
-	and PreviousLibrary.Options
-	and PreviousLibrary.Options.WalkSpeedToggle
-	and PreviousLibrary.Options.ZombieType
+local Env = getgenv()
+if typeof(Env.UmberUnload) == "function" then
+	pcall(Env.UmberUnload)
+end
+local Previous = Env.Library
+if Previous
+	and Previous.Unload
+	and Previous.Options
+	and Previous.Options.WalkSpeedToggle
+	and Previous.Options.ZombieType
 then
-	pcall(function()
-		PreviousLibrary:Unload()
-	end)
+	pcall(Previous.Unload, Previous)
 end
-local Sources = {}
-local Pending = 3
-local function Fetch(Name, Url)
-	task.spawn(function()
-		local Success, Result = pcall(game.HttpGet, game, Url)
-		if Success then
-			Sources[Name] = Result
+local HookState = Env.UmberHook
+if not HookState then
+	HookState = {}
+	Env.UmberHook = HookState
+end
+local BaseUrl = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local function LoadModule(Path)
+	for _ = 1, 3 do
+		local Ok, Source = pcall(game.HttpGet, game, BaseUrl .. Path)
+		local _sc3 = Ok and loadstring(Source)
+		local Chunk = _sc3
+		if _sc3 then
+			local RunOk, Module = pcall(Chunk)
+			if RunOk and Module then
+				return Module
+			end
 		end
-		Pending -= 1
-	end)
+		task.wait(1)
+	end
 end
-Fetch("Library", "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua")
-Fetch("ThemeManager", "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/ThemeManager.lua")
-Fetch("SaveManager", "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/SaveManager.lua")
-local FetchDeadline = tick() + 15
-while Pending > 0 and tick() < FetchDeadline do
-	task.wait()
-end
-local _sc3_s1 = not Sources.Library or not Sources.ThemeManager
-if _sc3_s1 or not Sources.SaveManager then
+local Library = LoadModule("Library.lua")
+local ThemeManager = LoadModule("addons/ThemeManager.lua")
+local SaveManager = LoadModule("addons/SaveManager.lua")
+if not (Library and ThemeManager and SaveManager) then
 	warn("Umber: could not download Obsidian.")
 	return
 end
-local Library = loadstring(Sources.Library)()
-local ThemeManager = loadstring(Sources.ThemeManager)()
-local SaveManager = loadstring(Sources.SaveManager)()
-local Options = Library.Options
-local Toggles = Library.Toggles
-local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
-local LocalPlayer = Players.LocalPlayer
+local Options, Toggles = Library.Options, Library.Toggles
 local Window = Library:CreateWindow({ Title = "Umber", Footer = "v0.1", NotifySide = "Right", Font = Enum.Font.Gotham })
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder("Umber")
@@ -68,146 +64,24 @@ local Tabs = { Main = Window:AddTab("Main", "home"), Player = Window:AddTab("Pla
 	Visuals = Window:AddTab("Visuals", "eye"), World = Window:AddTab("World", "sun"),
 	Combat = Window:AddTab("Combat", "swords"), Settings = Window:AddTab("Settings", "settings")
 }
-local Greetings = { "Welcome to Umber, %s", "Greetings, %s", "Good to see you, %s", "Umber is ready, %s",
-	"Back again, %s?"
-}
-local Greeting = string.format(Greetings[math.random(#Greetings)], LocalPlayer.DisplayName)
-local AvatarUrl = string.format("rbxthumb://type=AvatarHeadShot&id=%s&w=150&h=150", tostring(LocalPlayer.UserId))
-local LastBreathe = 0
-local function Breathe()
-	local Now = os.clock()
-	if Now - LastBreathe < 0.02 then
-		return
-	end
-	LastBreathe = Now
-	task.wait()
-end
-local function Pace(Group)
-	return setmetatable({}, { 
-		["__index"] = function(_, Key)
-			local Value = Group[Key]
-			if typeof(Value) ~= "function" then
-				return Value
-			end
-			return function(_, ...)
-				local Result = Value(Group, ...)
-				Breathe()
-				return Result
-			end
-		end
-	})
-end
-local AboutGroup = Pace(Tabs.Main:AddGroupbox({ Name = "About", Side = "Left", IconName = "circle-user" }))
-AboutGroup:AddImage("AboutAvatar", { Image = AvatarUrl, Height = 72, ScaleType = Enum.ScaleType.Fit })
-AboutGroup:AddLabel({ Text = string.format("%s (@%s)", LocalPlayer.DisplayName, LocalPlayer.Name), DoesWrap = true,
-	Size = 16
-})
-AboutGroup:AddLabel({ Text = Greeting, DoesWrap = true, Size = 14 })
-local Connections = {}
-local Tracked = {}
-local Visuals = {}
-local FuseMarks = {}
-local RenderSeen = {}
-local RenderView = { Camera = nil, Position = Vector3.new(), Look = Vector3.new(), Viewport = Vector2.new(), Now = 0 }
-local SpeedModifier
-local ChargeSpeed = false
-local ChargeValue = 55
-local Unloaded = false
-local LastESPUpdate = 0
-local LastVisualRefresh = 0
-local EspIdle = false
-local LoadingConfig = false
+local Unloaded, LoadingConfig = false, false
+local Connections, Tracked, Visuals, FuseMarks, RenderSeen = {}, {}, {}, {}, {}
+local TrackedCount, MaxTracked = 0, 60
+local RenderView = { Camera = nil, Position = Vector3.zero, Look = Vector3.zero, Viewport = Vector2.zero, Now = 0 }
+local SpeedModifier, ChargeSpeed, ChargeValue, ChargeRetries = nil, false, 55, 0
+local AntiGrabEnabled = false
+local EspIdle, LastESPUpdate, LastVisualRefresh = false, 0, 0
+local AssistPicker
 local HitboxConfig = { Enabled = false, Size = 5, Part = "All", IgnoreBarrel = false, Show = false, Transparency = 0.9 }
 local MeleeConfig = { AutoHeadshot = false, Chance = 100, SwingSpeed = 1, SwingSpeedEnabled = false }
 local ThrowableConfig = { MortarTimer = false, Trajectory = false }
-local AimConfig = { Assist = { Enabled = false, Types = { All = true }, FOV = 40, ShowFOV = false } }
+local AimConfig = { Enabled = false, Types = { All = true }, FOV = 40, ShowFOV = false }
+local WorldConfig = { Fullbright = false, NoFog = false, Ambient = Lighting.Ambient,
+	OutdoorAmbient = Lighting.OutdoorAmbient, Brightness = Lighting.Brightness
+}
 local WorldOriginal = { Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
 	Brightness = Lighting.Brightness, FogStart = Lighting.FogStart, FogEnd = Lighting.FogEnd
 }
-local AtmosphereOriginal = setmetatable({}, { __mode = "k" })
-local FogRestore = { Start = WorldOriginal.FogStart, End = WorldOriginal.FogEnd }
-local FogCaptured = false
-local function CaptureAtmosphere(Atmosphere)
-	local Entry = AtmosphereOriginal[Atmosphere]
-	if not Entry then
-		Entry = { Density = Atmosphere.Density, Haze = Atmosphere.Haze }
-		AtmosphereOriginal[Atmosphere] = Entry
-	end
-	return Entry
-end
-local function ClearFog()
-	if not FogCaptured then
-		FogCaptured = true
-		FogRestore.Start = Lighting.FogStart
-		FogRestore.End = Lighting.FogEnd
-	end
-	if Lighting.FogStart ~= 0 then
-		Lighting.FogStart = 0
-	end
-	if Lighting.FogEnd ~= 100000 then
-		Lighting.FogEnd = 100000
-	end
-	local Atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-	if Atmosphere then
-		CaptureAtmosphere(Atmosphere)
-		if Atmosphere.Density ~= 0 then
-			Atmosphere.Density = 0
-		end
-		if Atmosphere.Haze ~= 0 then
-			Atmosphere.Haze = 0
-		end
-	end
-end
-local function RestoreFog()
-	if not FogCaptured then
-		return
-	end
-	Lighting.FogStart = FogRestore.Start
-	Lighting.FogEnd = FogRestore.End
-	FogCaptured = false
-	for Atmosphere, Entry in AtmosphereOriginal do
-		if Atmosphere.Parent then
-			Atmosphere.Density = Entry.Density
-			Atmosphere.Haze = Entry.Haze
-		end
-	end
-	table.clear(AtmosphereOriginal)
-end
-local WorldConfig = { Fullbright = false, NoFog = false, Ambient = WorldOriginal.Ambient,
-	OutdoorAmbient = WorldOriginal.OutdoorAmbient, Brightness = WorldOriginal.Brightness
-}
-local function ApplyWorldLighting()
-	if Unloaded then
-		return
-	end
-	if WorldConfig.Fullbright then
-		Lighting.Ambient = Color3.new(1, 1, 1)
-		Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
-		Lighting.Brightness = 3
-	else
-		Lighting.Ambient = WorldConfig.Ambient
-		Lighting.OutdoorAmbient = WorldConfig.OutdoorAmbient
-		Lighting.Brightness = WorldConfig.Brightness
-	end
-	if WorldConfig.NoFog then
-		ClearFog()
-	else
-		RestoreFog()
-	end
-end
-local function RestoreWorldLighting()
-	Lighting.Ambient = WorldOriginal.Ambient
-	Lighting.OutdoorAmbient = WorldOriginal.OutdoorAmbient
-	Lighting.Brightness = WorldOriginal.Brightness
-	RestoreFog()
-end
-local function GuardWorldFog()
-	local _sc4 = Unloaded
-	if if Unloaded then _sc4 else not WorldConfig.NoFog then
-		return
-	end
-	ClearFog()
-end
 local ZombieConfig = { Enabled = false, Types = { All = true }, Box = true, BoxStyle = "Box",
 	BoxColor = Color3.fromRGB(164, 91, 38), Chams = false, ChamsColor = Color3.fromRGB(200, 80, 40),
 	Tracers = false, TracerColor = Color3.fromRGB(164, 91, 38), Names = false,
@@ -216,12 +90,6 @@ local ZombieConfig = { Enabled = false, Types = { All = true }, Box = true, BoxS
 	BomberTimerColor = Color3.fromRGB(255, 90, 60), BomberTimerPosition = "Bottom",
 	BomberTimerOffsetX = 0, BomberTimerOffsetY = 0, BlastRadius = true,
 	BlastRadiusColor = Color3.fromRGB(255, 90, 60)
-}
-local ZombieColors = { Normal = Color3.fromRGB(120, 220, 120), Fast = Color3.fromRGB(80, 190, 255),
-	Barrel = Color3.fromRGB(255, 130, 60), Sapper = Color3.fromRGB(255, 220, 90),
-	Igniter = Color3.fromRGB(200, 110, 255), Cuirassier = Color3.fromRGB(100, 230, 200),
-	Crawler = Color3.fromRGB(255, 120, 200), Headless = Color3.fromRGB(235, 235, 235),
-	BigBoy = Color3.fromRGB(255, 70, 70)
 }
 local PlayerConfig = { Enabled = false, Box = true, BoxColor = Color3.fromRGB(120, 200, 130), Chams = false,
 	ChamsColor = Color3.fromRGB(120, 200, 130), Tracers = false,
@@ -233,6 +101,12 @@ local PlayerConfig = { Enabled = false, Box = true, BoxColor = Color3.fromRGB(12
 	PinnedColor = Color3.fromRGB(255, 170, 60), Burning = false,
 	BurningColor = Color3.fromRGB(255, 130, 40), BrokenLegs = false,
 	BrokenLegsColor = Color3.fromRGB(180, 180, 255), BoxStyle = "Box"
+}
+local ZombieColors = { Normal = Color3.fromRGB(120, 220, 120), Fast = Color3.fromRGB(80, 190, 255),
+	Barrel = Color3.fromRGB(255, 130, 60), Sapper = Color3.fromRGB(255, 220, 90),
+	Igniter = Color3.fromRGB(200, 110, 255), Cuirassier = Color3.fromRGB(100, 230, 200),
+	Crawler = Color3.fromRGB(255, 120, 200), Headless = Color3.fromRGB(235, 235, 235),
+	BigBoy = Color3.fromRGB(255, 70, 70)
 }
 local ZombieNames = { Normal = "Shambler", Fast = "Runner", Barrel = "Bomber", Sapper = "Sapper", Igniter = "Igniter",
 	Cuirassier = "Cuirassier", Crawler = "Crawler", Headless = "Headless", BigBoy = "Big Boy"
@@ -246,207 +120,15 @@ local HitboxPartNames = { Head = { Head = true }, Torso = { Torso = true },
 local PinLabels = { RunnerTackle = "Tackled", RunnerAttack = "Pinned", RunnerClaw = "Clawed",
 	RunnerVomit = "Vomited On", SapperBlocked = "Sapper Block", CuirassierImpale = "Impaled"
 }
-local function EnsureEnabled(Name)
-	if LoadingConfig then
-		return
-	end
-	local Toggle = Toggles[Name]
-	if Toggle and not Toggle.Value then
-		Toggle:SetValue(true)
-	end
-end
 local function Track(Connection)
 	table.insert(Connections, Connection)
 	return Connection
 end
-local ChargeRetries = 0
-local function ClearChargeSpeed()
-	if SpeedModifier and SpeedModifier.Parent then
-		SpeedModifier:Destroy()
+local function EnsureEnabled(Name)
+	local Toggle = Toggles[Name]
+	if not LoadingConfig and Toggle and not Toggle.Value then
+		Toggle:SetValue(true)
 	end
-	SpeedModifier = nil
-	ChargeRetries = 0
-end
-local function ApplyChargeSpeed()
-	if Unloaded then
-		return
-	end
-	if not ChargeSpeed then
-		ClearChargeSpeed()
-		return
-	end
-	if SpeedModifier and SpeedModifier.Parent then
-		SpeedModifier.Value = ChargeValue
-		ChargeRetries = 0
-		return
-	end
-	SpeedModifier = nil
-	local Character = LocalPlayer.Character
-	if not Character then
-		return
-	end
-	local UserStates = Character:FindFirstChild("UserStates")
-	local _sc5 = UserStates and UserStates:FindFirstChild("SpeedController")
-	local Module = _sc5
-	local Success, Result = false, nil
-	if _sc5 then
-		Success, Result = pcall(require, Module)
-	end
-	if Success then
-		local Added, Modifier = pcall(function()
-			return Result.AddModifier("Charge", ChargeValue, 100)
-		end)
-		if Added and typeof(Modifier) == "Instance" then
-			SpeedModifier = Modifier
-			ChargeRetries = 0
-			Track(Modifier.Destroying:Connect(function()
-				SpeedModifier = nil
-				task.defer(ApplyChargeSpeed)
-			end))
-			return
-		end
-	end
-	if ChargeRetries < 20 then
-		ChargeRetries += 1
-		task.delay(0.25, ApplyChargeSpeed)
-	end
-end
-local AntiGrabEnabled = false
-local function SpoofGrabPosition()
-	if Unloaded or not AntiGrabEnabled then
-		return
-	end
-	local Character = LocalPlayer.Character
-	local _sc4 = Character and Character:FindFirstChildOfClass("Humanoid")
-	local Humanoid = _sc4
-	if not _sc4 then
-		return
-	end
-	Humanoid:Move(Vector3.new(0, 100000, 0))
-end
-local SwingBuffs = setmetatable({}, { __mode = "k" })
-local function ClearSwingBuffs()
-	for Tool, Buff in SwingBuffs do
-		if Buff.Parent == Tool then
-			Buff:Destroy()
-		end
-	end
-	table.clear(SwingBuffs)
-end
-local function IsMeleeTool(Tool)
-	local Animations = Tool:FindFirstChild("Animations")
-	if not Animations then
-		return false
-	end
-	local _sc4_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
-	return _sc4_s1 or Animations:FindFirstChild("Thrust") ~= nil
-end
-local function ApplySwingSpeed()
-	if Unloaded then
-		return
-	end
-	if MeleeConfig.SwingSpeed <= 1 or not MeleeConfig.SwingSpeedEnabled then
-		ClearSwingBuffs()
-		return
-	end
-	local Character = LocalPlayer.Character
-	if not Character then
-		return
-	end
-	local Tool = Character:FindFirstChildOfClass("Tool")
-	if not Tool or not IsMeleeTool(Tool) then
-		return
-	end
-	local Buff = SwingBuffs[Tool]
-	if not Buff or Buff.Parent ~= Tool then
-		Buff = Tool:FindFirstChild("SwingSpeedBuff")
-		if not Buff then
-			Buff = Instance.new("NumberValue")
-			Buff.Name = "SwingSpeedBuff"
-			Buff.Parent = Tool
-		end
-		SwingBuffs[Tool] = Buff
-	end
-	local Target = (MeleeConfig.SwingSpeed - 1) / 0.35
-	if Buff.Value ~= Target then
-		Buff.Value = Target
-	end
-end
-local ExistingCharacter = LocalPlayer.Character
-if ExistingCharacter then
-	ExistingCharacter:SetAttribute("SwingSpeedScalar", nil)
-end
-local NearPlane = 0.1
-local ProjectCorners = table.create(8)
-local ProjectDepth = table.create(8)
-local ProjectEdges = { { 1, 2 }, { 3, 4 }, { 1, 3 }, { 2, 4 }, { 5, 6 }, { 7, 8 }, { 5, 7 }, { 6, 8 }, { 1, 5 }, { 2, 6 },
-	{ 3, 7 }, { 4, 8 }
-}
-local function ProjectModel(Model, Camera)
-	local Success, BoxCFrame, BoxSize = pcall(function()
-		return Model:GetBoundingBox()
-	end)
-	if not Success then
-		return nil
-	end
-	local MinX = math.huge
-	local MinY = math.huge
-	local MaxX = -math.huge
-	local MaxY = -math.huge
-	local Visible = false
-	local AllFront = true
-	for Index = 0, 7 do
-		local _t1159 = Index % 2
-		local _sc5 = math.floor(Index / 2) % 2 == 0 and 0.5 or -0.5
-		local _sc6 = Index < 4 and 0.5 or -0.5
-		local World = BoxCFrame
-			* Vector3.new(BoxSize.X * (_t1159 == 0 and 0.5 or -0.5), BoxSize.Y * _sc5, BoxSize.Z * _sc6)
-		local Point = Camera:WorldToViewportPoint(World)
-		ProjectCorners[Index + 1] = World
-		ProjectDepth[Index + 1] = Point.Z
-		if Point.Z <= NearPlane then
-			AllFront = false
-		end
-		if Point.Z > NearPlane then
-			Visible = true
-			MinX = math.min(MinX, Point.X)
-			MaxX = math.max(MaxX, Point.X)
-			MinY = math.min(MinY, Point.Y)
-			MaxY = math.max(MaxY, Point.Y)
-		end
-	end
-	if not AllFront then
-		for Index = 1, 12 do
-			local Edge = ProjectEdges[Index]
-			local A = ProjectCorners[Edge[1]]
-			local B = ProjectCorners[Edge[2]]
-			local DepthA = ProjectDepth[Edge[1]]
-			local DepthB = ProjectDepth[Edge[2]]
-			if DepthA > NearPlane ~= (DepthB > NearPlane) then
-				local Point = Camera:WorldToViewportPoint(A + (B - A) * ((NearPlane - DepthA) / (DepthB - DepthA)))
-				if Point.Z > 0 then
-					Visible = true
-					MinX = math.min(MinX, Point.X)
-					MaxX = math.max(MaxX, Point.X)
-					MinY = math.min(MinY, Point.Y)
-					MaxY = math.max(MaxY, Point.Y)
-				end
-			end
-		end
-	end
-	if not Visible then
-		return nil
-	end
-	return MinX, MinY, MaxX, MaxY
-end
-local function CreateText(TextSize)
-	local Text = Drawing.new("Text")
-	Text.Size = TextSize
-	Text.Center = true
-	Text.Outline = true
-	Text.OutlineColor = Color3.new(0, 0, 0)
-	Text.Visible = false
-	return Text
 end
 local WriteCache = setmetatable({}, { __mode = "k" })
 local function Set(Target, Prop, Value)
@@ -460,52 +142,290 @@ local function Set(Target, Prop, Value)
 		Target[Prop] = Value
 	end
 end
+local function NewDrawing(Class, Props)
+	local Object = Drawing.new(Class)
+	for Key, Value in Props do
+		Object[Key] = Value
+	end
+	Object.Visible = false
+	return Object
+end
+local function CreateText(Size)
+	return NewDrawing("Text", { Size = Size, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0) })
+end
+local function RemoveDrawing(Object)
+	pcall(function()
+		Object:Remove()
+	end)
+end
+local function GetZombieLabel(Model)
+	local Type = Model:GetAttribute("Type")
+	if Type == nil then
+		return Model.Name
+	end
+	return ZombieNames[Type] or tostring(Type)
+end
+local function TypeAllowed(Types, Model)
+	return Types.All or Types[GetZombieLabel(Model)] == true
+end
+local function IsBarrel(Model)
+	return Model:GetAttribute("Type") == "Barrel"
+end
+local AtmosphereOriginal = setmetatable({}, { __mode = "k" })
+local FogRestore, FogCaptured = { Start = WorldOriginal.FogStart, End = WorldOriginal.FogEnd }, false
+local function ClearFog()
+	if not FogCaptured then
+		FogCaptured = true
+		FogRestore.Start, FogRestore.End = Lighting.FogStart, Lighting.FogEnd
+	end
+	Set(Lighting, "FogStart", 0)
+	Set(Lighting, "FogEnd", 100000)
+	local Atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	if Atmosphere then
+		if not AtmosphereOriginal[Atmosphere] then
+			AtmosphereOriginal[Atmosphere] = { Density = Atmosphere.Density, Haze = Atmosphere.Haze }
+		end
+		Atmosphere.Density = 0
+		Atmosphere.Haze = 0
+	end
+end
+local function RestoreFog()
+	if not FogCaptured then
+		return
+	end
+	FogCaptured = false
+	Lighting.FogStart, Lighting.FogEnd = FogRestore.Start, FogRestore.End
+	for Atmosphere, Entry in AtmosphereOriginal do
+		if Atmosphere.Parent then
+			Atmosphere.Density, Atmosphere.Haze = Entry.Density, Entry.Haze
+		end
+	end
+	table.clear(AtmosphereOriginal)
+	table.clear(WriteCache[Lighting] or {})
+end
+local function ApplyWorldLighting()
+	if Unloaded then
+		return
+	end
+	local Bright = WorldConfig.Fullbright
+	local _sc4 = Bright
+	if Bright then
+		local _t785 = Lighting
+		_sc4 = Color3.new(1, 1, 1)
+	end
+	local _sc3 = _sc4
+	if not _sc4 then
+		local _t785 = Lighting
+		_sc3 = WorldConfig.Ambient
+	end
+	Lighting.Ambient = _sc3
+	local _sc6 = Bright
+	if Bright then
+		local _t799 = Lighting
+		_sc6 = Color3.new(1, 1, 1)
+	end
+	local _sc5 = _sc6
+	if not _sc6 then
+		local _t799 = Lighting
+		_sc5 = WorldConfig.OutdoorAmbient
+	end
+	Lighting.OutdoorAmbient = _sc5
+	local _sc7 = Bright and 3
+	if not _sc7 then
+		local Lighting_v1 = Lighting
+		_sc7 = WorldConfig.Brightness
+	end
+	Lighting.Brightness = _sc7
+	if WorldConfig.NoFog then
+		ClearFog()
+	else
+		RestoreFog()
+	end
+end
+local function GuardWorldFog()
+	if not Unloaded and WorldConfig.NoFog then
+		ClearFog()
+	end
+end
+local function ClearChargeSpeed()
+	if SpeedModifier and SpeedModifier.Parent then
+		SpeedModifier:Destroy()
+	end
+	SpeedModifier, ChargeRetries = nil, 0
+end
+local function ApplyChargeSpeed()
+	if Unloaded then
+		return
+	end
+	if not ChargeSpeed then
+		ClearChargeSpeed()
+		return
+	end
+	if SpeedModifier and SpeedModifier.Parent then
+		SpeedModifier.Value, ChargeRetries = ChargeValue, 0
+		return
+	end
+	SpeedModifier = nil
+	local Character = LocalPlayer.Character
+	local _sc4 = Character and Character:FindFirstChild("UserStates")
+	local States = _sc4
+	local _sc5 = _sc4 and States:FindFirstChild("SpeedController")
+	local Module = _sc5
+	if _sc5 then
+		local Ok, Controller = pcall(require, Module)
+		local Added, Modifier = false, nil
+		if Ok then
+			Added, Modifier = pcall(function()
+				return Controller.AddModifier("Charge", ChargeValue, 100)
+			end)
+		end
+		if Added and typeof(Modifier) == "Instance" then
+			SpeedModifier, ChargeRetries = Modifier, 0
+			Modifier.Destroying:Once(function()
+				SpeedModifier = nil
+				task.defer(ApplyChargeSpeed)
+			end)
+			return
+		end
+	end
+	if ChargeRetries < 20 then
+		ChargeRetries += 1
+		task.delay(0.25, ApplyChargeSpeed)
+	end
+end
+local function SpoofGrabPosition()
+	local Character = LocalPlayer.Character
+	local _sc3 = Character and Character:FindFirstChildOfClass("Humanoid")
+	local Humanoid = _sc3
+	if AntiGrabEnabled and _sc3 then
+		Humanoid:Move(Vector3.new(0, 100000, 0))
+	end
+end
+local SwingBuffs = setmetatable({}, { __mode = "k" })
+local function ClearSwingBuffs()
+	for Tool, Buff in SwingBuffs do
+		if Buff.Parent == Tool then
+			Buff:Destroy()
+		end
+	end
+	table.clear(SwingBuffs)
+end
+local function IsMeleeTool(Tool)
+	local Animations = Tool:FindFirstChild("Animations")
+	local _sc3 = Animations ~= nil
+	if _sc3 then
+		local _sc4_s1 = Animations:FindFirstChild("SwingRight") ~= nil or Animations:FindFirstChild("SwingDown") ~= nil
+		_sc3 = _sc4_s1 or Animations:FindFirstChild("Thrust") ~= nil
+	end
+	return _sc3
+end
+local function ApplySwingSpeed()
+	if Unloaded then
+		return
+	end
+	if MeleeConfig.SwingSpeed <= 1 or not MeleeConfig.SwingSpeedEnabled then
+		ClearSwingBuffs()
+		return
+	end
+	local Character = LocalPlayer.Character
+	local _sc4 = Character and Character:FindFirstChildOfClass("Tool")
+	local Tool = _sc4
+	if not _sc4 or not IsMeleeTool(Tool) then
+		return
+	end
+	local Buff = SwingBuffs[Tool]
+	if not Buff or Buff.Parent ~= Tool then
+		Buff = Tool:FindFirstChild("SwingSpeedBuff")
+		if not Buff then
+			Buff = Instance.new("NumberValue")
+			Buff.Name = "SwingSpeedBuff"
+			Buff.Parent = Tool
+		end
+		SwingBuffs[Tool] = Buff
+	end
+	Set(Buff, "Value", (MeleeConfig.SwingSpeed - 1) / 0.35)
+end
+local NearPlane = 0.1
+local ProjectCorners, ProjectDepth, Bounds = table.create(8), table.create(8), { 0, 0, 0, 0 }
+local ProjectEdges = { { 1, 2 }, { 3, 4 }, { 1, 3 }, { 2, 4 }, { 5, 6 }, { 7, 8 }, { 5, 7 }, { 6, 8 }, { 1, 5 }, { 2, 6 },
+	{ 3, 7 }, { 4, 8 }
+}
+local function Expand(Point)
+	Bounds[1], Bounds[2] = math.min(Bounds[1], Point.X), math.min(Bounds[2], Point.Y)
+	Bounds[3], Bounds[4] = math.max(Bounds[3], Point.X), math.max(Bounds[4], Point.Y)
+end
+local function ProjectModel(Model, Camera)
+	local Ok, BoxCFrame, BoxSize = pcall(Model.GetBoundingBox, Model)
+	if not Ok then
+		return nil
+	end
+	Bounds[1], Bounds[2], Bounds[3], Bounds[4] = math.huge, math.huge, -math.huge, -math.huge
+	local Visible, AllFront = false, true
+	for Index = 0, 7 do
+		local World = BoxCFrame
+			* Vector3.new(
+				BoxSize.X * (Index % 2 == 0 and 0.5 or -0.5),
+				BoxSize.Y * (Index // 2 % 2 == 0 and 0.5 or -0.5),
+				BoxSize.Z * (Index < 4 and 0.5 or -0.5)
+			)
+		local Point = Camera:WorldToViewportPoint(World)
+		ProjectCorners[Index + 1], ProjectDepth[Index + 1] = World, Point.Z
+		if Point.Z > NearPlane then
+			Visible = true
+			Expand(Point)
+		else
+			AllFront = false
+		end
+	end
+	if not AllFront then
+		for Index = 1, 12 do
+			local Edge = ProjectEdges[Index]
+			local DepthA, DepthB = ProjectDepth[Edge[1]], ProjectDepth[Edge[2]]
+			if DepthA > NearPlane ~= (DepthB > NearPlane) then
+				local A, B = ProjectCorners[Edge[1]], ProjectCorners[Edge[2]]
+				local Point = Camera:WorldToViewportPoint(A + (B - A) * ((NearPlane - DepthA) / (DepthB - DepthA)))
+				if Point.Z > 0 then
+					Visible = true
+					Expand(Point)
+				end
+			end
+		end
+	end
+	if not Visible then
+		return nil
+	end
+	return Bounds[1], Bounds[2], Bounds[3], Bounds[4]
+end
 local function MakeEntry(Kind)
-	local Fill = Drawing.new("Square")
-	Fill.Filled = true
-	Fill.Thickness = 1
-	Fill.Transparency = 0.9
-	Fill.Visible = false
-	local Box = Drawing.new("Square")
-	Box.Filled = false
-	Box.Thickness = 1
-	Box.Visible = false
-	local Tracer = Drawing.new("Line")
-	Tracer.Thickness = 1
-	Tracer.Visible = false
-	local Entry = { Kind = Kind, Fill = Fill, Box = Box, Corners = nil, NameText = CreateText(14),
-		HealthText = CreateText(13), TimerText = CreateText(14), Tracer = Tracer, StatusTexts = {},
-		Highlight = nil, Suppressed = {}, Gui = nil, Humanoid = nil, Root = nil, SuppressTarget = nil,
-		SuppressAt = 0
-	}
-	if Kind == "player" then
+	local Entry = { Kind = Kind, All = {}, StatusTexts = {}, Suppressed = {}, SuppressAt = 0 }
+	local function Add(Object)
+		table.insert(Entry.All, Object)
+		return Object
+	end
+	Entry.Fill = Add(NewDrawing("Square", { Filled = true, Thickness = 1, Transparency = 0.9 }))
+	Entry.Box = Add(NewDrawing("Square", { Filled = false, Thickness = 1 }))
+	Entry.Tracer = Add(NewDrawing("Line", { Thickness = 1 }))
+	Entry.NameText, Entry.HealthText = Add(CreateText(14)), Add(CreateText(13))
+	if Kind == "zombie" then
+		Entry.TimerText = Add(CreateText(14))
+	else
 		for Index = 1, 5 do
-			Entry.StatusTexts[Index] = CreateText(13)
+			Entry.StatusTexts[Index] = Add(CreateText(13))
 		end
 	end
 	return Entry
 end
 local function EnsureCorners(Entry)
-	local Corners = Entry.Corners
-	if Corners then
-		return Corners
-	end
-	local Corners_s1 = {}
-	for Index = 1, 8 do
-		local Line = Drawing.new("Line")
-		Line.Thickness = 2
-		Line.Visible = false
-		Corners_s1[Index] = Line
-	end
-	Entry.Corners = Corners_s1
-	return Corners_s1
-end
-local function RestoreHighlights(Entry)
-	for Highlight in Entry.Suppressed do
-		if not Highlight.Parent then
-			Entry.Suppressed[Highlight] = nil
+	if not Entry.Corners then
+		Entry.Corners = {}
+		for Index = 1, 8 do
+			Entry.Corners[Index] = NewDrawing("Line", { Thickness = 2 })
+			table.insert(Entry.All, Entry.Corners[Index])
 		end
 	end
+	return Entry.Corners
+end
+local function RestoreHighlights(Entry)
 	for Highlight, Enabled in Entry.Suppressed do
 		if Highlight.Parent then
 			Highlight.Enabled = Enabled
@@ -531,88 +451,76 @@ local function SuppressHighlights(Entry, Model, Ours)
 end
 local function DestroyEntry(Entry)
 	RestoreHighlights(Entry)
-	for _, Object in { Entry.Fill, Entry.Box, Entry.NameText, Entry.HealthText, Entry.TimerText, Entry.Tracer } do
-		pcall(function()
-			Object:Remove()
-		end)
-	end
-	for _, Line in Entry.Corners or {} do
-		pcall(function()
-			Line:Remove()
-		end)
-	end
-	for _, Text in Entry.StatusTexts do
-		pcall(function()
-			Text:Remove()
-		end)
+	for _, Object in Entry.All do
+		RemoveDrawing(Object)
 	end
 	if Entry.Highlight then
-		pcall(function()
-			Entry.Highlight:Destroy()
-		end)
+		pcall(Entry.Highlight.Destroy, Entry.Highlight)
 	end
-	if Entry.Gui and Entry.Gui.Holder then
-		pcall(function()
-			Entry.Gui.Holder:Destroy()
-		end)
+	if Entry.Gui then
+		pcall(Entry.Gui.Holder.Destroy, Entry.Gui.Holder)
 	end
+end
+local function Drop(Model)
+	local Entry = Tracked[Model]
+	if Entry then
+		DestroyEntry(Entry)
+		Tracked[Model] = nil
+		TrackedCount -= 1
+	end
+	FuseMarks[Model] = nil
 end
 local function GetEntry(Model, Kind)
 	local Entry = Tracked[Model]
 	if Entry and Entry.Kind ~= Kind then
-		DestroyEntry(Entry)
+		Drop(Model)
 		Entry = nil
 	end
 	if not Entry then
+		if TrackedCount >= MaxTracked then
+			return nil
+		end
 		Entry = MakeEntry(Kind)
 		Tracked[Model] = Entry
+		TrackedCount += 1
 	end
 	return Entry
 end
-local function EnsureGui(Entry, Model)
-	if Entry.Gui and Entry.Gui.Holder and Entry.Gui.Holder.Parent then
-		return Entry.Gui
+local function HideEntry(Entry)
+	for _, Object in Entry.All do
+		Set(Object, "Visible", false)
 	end
-	local _sc5_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
-	local Head = _sc5_s1
-	if not _sc5_s1 then
-		return nil
+	if Entry.Highlight then
+		Set(Entry.Highlight, "Enabled", false)
+	end
+	RestoreHighlights(Entry)
+	if Entry.Gui then
+		Set(Entry.Gui.Holder, "Enabled", false)
+	end
+end
+local function EnsureGui(Entry, Model)
+	if Entry.Gui and Entry.Gui.Holder.Parent then
+		return
+	end
+	local _sc4_s1 = Model:FindFirstChild("Head") or Model:FindFirstChild("HumanoidRootPart")
+	local Head = _sc4_s1
+	if not _sc4_s1 then
+		return
 	end
 	local Holder = Instance.new("BillboardGui")
-	Holder.Name = "UmberESP"
-	Holder.AlwaysOnTop = true
-	Holder.LightInfluence = 0
-	Holder.ResetOnSpawn = false
-	Holder.Size = UDim2.fromOffset(150, 34)
-	Holder.StudsOffset = Vector3.new(0, 2.4, 0)
+	Holder.Name, Holder.AlwaysOnTop, Holder.LightInfluence, Holder.ResetOnSpawn = "UmberESP", true, 0, false
+	Holder.Size, Holder.StudsOffset = UDim2.fromOffset(150, 34), Vector3.new(0, 2.4, 0)
 	Holder.Parent = Head
 	local NameLabel = Instance.new("TextLabel")
-	NameLabel.Name = "Name"
-	NameLabel.BackgroundColor3 = Color3.new(0, 0, 0)
-	NameLabel.BackgroundTransparency = 0.35
-	NameLabel.BorderSizePixel = 0
-	NameLabel.Font = Enum.Font.GothamBold
-	NameLabel.TextSize = 13
-	NameLabel.TextColor3 = Color3.new(1, 1, 1)
-	NameLabel.Size = UDim2.new(1, 0, 0, 16)
-	NameLabel.Visible = false
-	NameLabel.Parent = Holder
+	NameLabel.BackgroundColor3, NameLabel.BackgroundTransparency, NameLabel.BorderSizePixel = Color3.new(0, 0, 0), 0.35, 0
+	NameLabel.Font, NameLabel.TextSize, NameLabel.TextColor3 = Enum.Font.GothamBold, 13, Color3.new(1, 1, 1)
+	NameLabel.Size, NameLabel.Visible, NameLabel.Parent = UDim2.new(1, 0, 0, 16), false, Holder
 	local HealthBack = Instance.new("Frame")
-	HealthBack.Name = "HealthBack"
-	HealthBack.BackgroundColor3 = Color3.new(0, 0, 0)
-	HealthBack.BackgroundTransparency = 0.35
-	HealthBack.BorderSizePixel = 0
-	HealthBack.Size = UDim2.new(1, 0, 0, 6)
-	HealthBack.Visible = false
-	HealthBack.Parent = Holder
+	HealthBack.BackgroundColor3, HealthBack.BackgroundTransparency, HealthBack.BorderSizePixel = Color3.new(0, 0, 0), 0.35, 0
+	HealthBack.Size, HealthBack.Visible, HealthBack.Parent = UDim2.new(1, 0, 0, 6), false, Holder
 	local HealthFill = Instance.new("Frame")
-	HealthFill.Name = "HealthFill"
-	HealthFill.BackgroundColor3 = Color3.fromRGB(90, 200, 90)
-	HealthFill.BorderSizePixel = 0
-	HealthFill.Size = UDim2.fromScale(1, 1)
-	HealthFill.Parent = HealthBack
+	HealthFill.BorderSizePixel, HealthFill.Size, HealthFill.Parent = 0, UDim2.fromScale(1, 1), HealthBack
 	Entry.Gui = { Holder = Holder, NameLabel = NameLabel, HealthBack = HealthBack, HealthFill = HealthFill }
-	return Entry.Gui
 end
 local function RefreshVisuals(Now)
 	if Now - LastVisualRefresh < 0.1 then
@@ -621,10 +529,7 @@ local function RefreshVisuals(Now)
 	LastVisualRefresh = Now
 	table.clear(Visuals)
 	local Camera = workspace.CurrentCamera
-	if not Camera then
-		return
-	end
-	for _, Child in Camera:GetChildren() do
+	for _, Child in Camera and Camera:GetChildren() or {} do
 		local Orig = Child:FindFirstChild("Orig")
 		if Orig and Orig:IsA("ObjectValue") and Orig.Value then
 			Visuals[Orig.Value] = Child
@@ -647,67 +552,44 @@ local function EnsureHighlight(Entry, Target)
 		return Entry.Highlight
 	end
 	if Entry.Highlight then
-		pcall(function()
-			Entry.Highlight:Destroy()
-		end)
+		pcall(Entry.Highlight.Destroy, Entry.Highlight)
 	end
 	local Highlight = Instance.new("Highlight")
-	Highlight.Name = "UmberChams"
-	Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	Highlight.FillTransparency = 0.55
-	Highlight.OutlineTransparency = 0.1
-	Highlight.Parent = Target
+	Highlight.Name, Highlight.DepthMode = "UmberChams", Enum.HighlightDepthMode.AlwaysOnTop
+	Highlight.FillTransparency, Highlight.OutlineTransparency, Highlight.Parent = 0.55, 0.1, Target
 	Entry.Highlight = Highlight
 	return Highlight
 end
-local function GetPlayerLabel(Model)
-	local Player = Players:FindFirstChild(Model.Name)
-	if Player then
-		return Player.DisplayName
-	end
-	return Model.Name
-end
 local function GetStatuses(Model)
-	local Statuses = {}
-	local UserStates = Model:FindFirstChild("UserStates")
-	if not UserStates then
-		return Statuses
+	local List = {}
+	local States = Model:FindFirstChild("UserStates")
+	if not States then
+		return List
 	end
-	if PlayerConfig.Infection then
-		local Infected = UserStates:FindFirstChild("Infected")
-		if Infected and typeof(Infected.Value) == "number" and Infected.Value > 0 then
-			table.insert(Statuses, { Text = string.format("Infection %d%%", math.floor(Infected.Value + 0.5)),
-				Color = PlayerConfig.InfectionColor
-			})
-		end
+	local function State(Name)
+		local Object = States:FindFirstChild(Name)
+		return Object and Object.Value
 	end
-	if PlayerConfig.Grabbed then
-		local Grabbed = UserStates:FindFirstChild("Grabbed")
-		if Grabbed and typeof(Grabbed.Value) == "number" and Grabbed.Value > 0 then
-			table.insert(Statuses, { Text = "Grabbed", Color = PlayerConfig.GrabbedColor })
-		end
+	local Infected, Grabbed, Pin, BrokenLegs = State("Infected"), State("Grabbed"), State("Pin"), State("BrokenLegs")
+	local Burning = Model:GetAttribute("Burning")
+	if PlayerConfig.Infection and typeof(Infected) == "number" and Infected > 0 then
+		table.insert(List, { Text = string.format("Infection %d%%", math.floor(Infected + 0.5)),
+			Color = PlayerConfig.InfectionColor
+		})
 	end
-	if PlayerConfig.Pinned then
-		local Pin = UserStates:FindFirstChild("Pin")
-		if Pin and typeof(Pin.Value) == "string" and Pin.Value ~= "None" and Pin.Value ~= "" then
-			local insert = table.insert
-			local _sc5 = PinLabels[Pin.Value]
-			insert(Statuses, { Text = _sc5 or Pin.Value, Color = PlayerConfig.PinnedColor })
-		end
+	if PlayerConfig.Grabbed and typeof(Grabbed) == "number" and Grabbed > 0 then
+		table.insert(List, { Text = "Grabbed", Color = PlayerConfig.GrabbedColor })
 	end
-	if PlayerConfig.Burning then
-		local Burning = Model:GetAttribute("Burning")
-		if Burning and Burning ~= 0 then
-			table.insert(Statuses, { Text = "Burning", Color = PlayerConfig.BurningColor })
-		end
+	if PlayerConfig.Pinned and typeof(Pin) == "string" and Pin ~= "None" and Pin ~= "" then
+		table.insert(List, { Text = PinLabels[Pin] or Pin, Color = PlayerConfig.PinnedColor })
 	end
-	if PlayerConfig.BrokenLegs then
-		local BrokenLegs = UserStates:FindFirstChild("BrokenLegs")
-		if BrokenLegs and BrokenLegs.Value then
-			table.insert(Statuses, { Text = "Broken Legs", Color = PlayerConfig.BrokenLegsColor })
-		end
+	if PlayerConfig.Burning and Burning and Burning ~= 0 then
+		table.insert(List, { Text = "Burning", Color = PlayerConfig.BurningColor })
 	end
-	return Statuses
+	if PlayerConfig.BrokenLegs and BrokenLegs then
+		table.insert(List, { Text = "Broken Legs", Color = PlayerConfig.BrokenLegsColor })
+	end
+	return List
 end
 local function GetFuseRemaining(Model)
 	local State = Model:FindFirstChild("State")
@@ -715,220 +597,163 @@ local function GetFuseRemaining(Model)
 		FuseMarks[Model] = nil
 		return nil
 	end
-	local Started = FuseMarks[Model]
-	if not Started then
-		Started = os.clock()
-		FuseMarks[Model] = Started
-	end
-	return math.max(0, 3.5 - (os.clock() - Started))
+	local FuseMarks_v1 = FuseMarks
+	local _sc4 = FuseMarks[Model]
+	FuseMarks_v1[Model] = _sc4 or os.clock()
+	return math.max(0, 3.5 - (os.clock() - FuseMarks[Model]))
 end
-local function HideEntry(Entry)
-	Set(Entry.Fill, "Visible", false)
-	Set(Entry.Box, "Visible", false)
-	for Index = 1, 8 do
-		local _sc4 = Entry.Corners and Entry.Corners[Index]
-		local Line = _sc4
-		if _sc4 then
-			Set(Line, "Visible", false)
-		end
-	end
-	Set(Entry.NameText, "Visible", false)
-	Set(Entry.HealthText, "Visible", false)
-	Set(Entry.TimerText, "Visible", false)
-	Set(Entry.Tracer, "Visible", false)
-	for _, Text in Entry.StatusTexts do
-		Set(Text, "Visible", false)
-	end
-	if Entry.Highlight then
-		Set(Entry.Highlight, "Enabled", false)
-	end
-	RestoreHighlights(Entry)
-	if Entry.Gui and Entry.Gui.Holder then
-		Set(Entry.Gui.Holder, "Enabled", false)
-	end
-end
-local function RenderModel(Model, Kind, Seen, View)
+local function RenderModel(Model, Kind, View)
 	local Config = Kind == "zombie" and ZombieConfig or PlayerConfig
-	if not Config.Enabled then
-		return
-	end
 	local Cached = Tracked[Model]
-	local _sc4 = Cached and Cached.Humanoid
-	local HumanoidInstance = _sc4
-	if not _sc4 or not HumanoidInstance.Parent then
-		HumanoidInstance = Model:FindFirstChildOfClass("Humanoid")
+	local _sc3 = Cached and Cached.Humanoid
+	local Humanoid = _sc3
+	if not (_sc3 and Humanoid.Parent) then
+		Humanoid = Model:FindFirstChildOfClass("Humanoid")
 	end
-	if not HumanoidInstance or HumanoidInstance.Health <= 0 then
+	if not Humanoid or Humanoid.Health <= 0 then
 		return
 	end
-	local _sc7 = Cached and Cached.Root
-	local Root = _sc7
-	if not _sc7 or not Root.Parent then
+	local _sc6 = Cached and Cached.Root
+	local Root = _sc6
+	if not (_sc6 and Root.Parent) then
 		Root = Model:FindFirstChild("HumanoidRootPart")
 	end
-	local _sc9 = Root and Root.Position
-	local RootPos = _sc9
-	if _sc9 and (RootPos - View.Position):Dot(View.Look) < -2 then
+	local _sc8 = Root and Root.Position
+	local RootPos = _sc8
+	if _sc8 and (RootPos - View.Position):Dot(View.Look) < -2 then
 		return
 	end
 	local Label, Type
 	if Kind == "zombie" then
-		Type = Model:GetAttribute("Type")
-		local _sc12 = Type == nil and Model.Name
-		local _sc11 = _sc12
-		if not _sc12 then
-			_sc11 = ZombieNames[Type] or tostring(Type)
-		end
-		Label = _sc11
-		local Types = ZombieConfig.Types
-		if not Types.All and not Types[Label] then
+		Type, Label = Model:GetAttribute("Type"), GetZombieLabel(Model)
+		if not TypeAllowed(ZombieConfig.Types, Model) then
 			return
 		end
 	else
-		Label = GetPlayerLabel(Model)
+		local Player = Players:FindFirstChild(Model.Name)
+		local displayName = Player and Player.DisplayName
+		local _sc10 = displayName
+		Label = if displayName then _sc10 else Model.Name
 	end
 	local MinX, MinY, MaxX, MaxY = ProjectModel(Model, View.Camera)
 	if not MinX then
 		return
 	end
 	local Entry = GetEntry(Model, Kind)
-	Entry.Humanoid = HumanoidInstance
-	Entry.Root = Root
-	Seen[Model] = true
+	if not Entry then
+		return
+	end
+	Entry.Humanoid, Entry.Root = Humanoid, Root
+	RenderSeen[Model] = true
 	local CenterX = (MinX + MaxX) * 0.5
-	local Distance = 0
-	if RootPos then
-		Distance = math.floor((RootPos - View.Position).Magnitude)
-	end
 	if Config.Distance then
-		Label = string.format("%s [%dm]", Label, Distance)
+		local _sc10 = RootPos
+		local format = string.format
+		if RootPos then
+			local string_v1 = string
+			_sc10 = math.floor((RootPos - View.Position).Magnitude)
+		end
+		Label = format("%s [%dm]", Label, _sc10 or 0)
 	end
-	local Style = Config.BoxStyle or "Box"
-	local ShowBox = Config.Box and Style ~= "Corner"
+	local TypeColor = Kind == "zombie" and ZombieColors[Type] or nil
+	local Style = Config.BoxStyle
+	local ShowBox, ShowCorners = Config.Box and Style ~= "Corner", Config.Box and Style == "Corner"
 	local ShowFill = ShowBox and Style == "Filled Box"
-	local ShowCorners = Config.Box and Style == "Corner"
-	local Corners = Entry.Corners
+	local BoxColor = TypeColor or Config.BoxColor
 	Set(Entry.Box, "Visible", ShowBox)
 	Set(Entry.Fill, "Visible", ShowFill)
-	if ShowCorners then
-		local _sc11 = Corners
-		Corners = if Corners then _sc11 else EnsureCorners(Entry)
+	local _sc12 = ShowCorners and EnsureCorners(Entry) or Entry.Corners
+	local Corners = _sc12
+	for Index = 1, _sc12 and 8 or 0 do
+		Set(Corners[Index], "Visible", ShowCorners)
 	end
-	if Corners then
-		for Index = 1, 8 do
-			Set(Corners[Index], "Visible", ShowCorners)
+	if ShowBox then
+		local Position, Size = Vector2.new(MinX, MinY), Vector2.new(MaxX - MinX, MaxY - MinY)
+		local ShowFill_v1 = ShowFill
+		local Box = Entry.Box
+		if ShowFill then
+			ShowFill_v1 = Entry.Fill
 		end
-	end
-	if Config.Box then
-		local BoxColor = Config.BoxColor
-		if Kind == "zombie" then
-			BoxColor = ZombieColors[Type] or Config.BoxColor
+		for _, Square in { Box, ShowFill_v1 or nil } do
+			Set(Square, "Color", BoxColor)
+			Set(Square, "Position", Position)
+			Set(Square, "Size", Size)
 		end
-		if ShowBox then
-			local Position = Vector2.new(MinX, MinY)
-			local Size = Vector2.new(MaxX - MinX, MaxY - MinY)
-			Set(Entry.Box, "Color", BoxColor)
-			Set(Entry.Box, "Position", Position)
-			Set(Entry.Box, "Size", Size)
-			if ShowFill then
-				Set(Entry.Fill, "Color", BoxColor)
-				Set(Entry.Fill, "Position", Position)
-				Set(Entry.Fill, "Size", Size)
-			end
-		end
-		if ShowCorners then
-			local Length = math.clamp(math.min(MaxX - MinX, MaxY - MinY) * 0.25, 4, 18)
-			local Left = MinX
-			local Right = MaxX
-			local Top = MinY
-			local Bottom = MaxY
-			for Index = 1, 4 do
-				local X = (Index == 1 or Index == 3) and Left or Right
-				local Y = Index <= 2 and Top or Bottom
-				local _sc12 = Index <= 2 and 1 or -1
-				local Horizontal = Corners[Index * 2 - 1]
-				local Vertical = Corners[Index * 2]
-				Set(Horizontal, "Color", BoxColor)
-				Set(Horizontal, "From", Vector2.new(X, Y))
-				Set(Horizontal, "To", Vector2.new(X + ((Index == 1 or Index == 3) and 1 or -1) * Length, Y))
-				Set(Vertical, "Color", BoxColor)
-				Set(Vertical, "From", Vector2.new(X, Y))
-				Set(Vertical, "To", Vector2.new(X, Y + _sc12 * Length))
-			end
+	elseif ShowCorners then
+		local Length = math.clamp(math.min(MaxX - MinX, MaxY - MinY) * 0.25, 4, 18)
+		for Index = 1, 4 do
+			local X, Y = Index % 2 == 1 and MinX or MaxX, Index <= 2 and MinY or MaxY
+			local _t2165 = Index % 2
+			local _sc15 = Index <= 2 and 1 or -1
+			local Horizontal, Vertical = Corners[Index * 2 - 1], Corners[Index * 2]
+			Set(Horizontal, "Color", BoxColor)
+			Set(Horizontal, "From", Vector2.new(X, Y))
+			Set(Horizontal, "To", Vector2.new(X + (_t2165 == 1 and 1 or -1) * Length, Y))
+			Set(Vertical, "Color", BoxColor)
+			Set(Vertical, "From", Vector2.new(X, Y))
+			Set(Vertical, "To", Vector2.new(X, Y + _sc15 * Length))
 		end
 	end
+	Set(Entry.Tracer, "Visible", Config.Tracers)
 	if Config.Tracers then
-		Set(Entry.Tracer, "Visible", true)
 		Set(Entry.Tracer, "Color", Config.TracerColor)
 		Set(Entry.Tracer, "From", Vector2.new(View.Viewport.X * 0.5, View.Viewport.Y))
 		Set(Entry.Tracer, "To", Vector2.new(CenterX, MaxY))
-	else
-		Set(Entry.Tracer, "Visible", false)
 	end
-	do
-		local ShowTextName = Config.Names and (Config.NameStyle == "Text" or Config.NameStyle == "Both")
-		local ShowGuiName = Config.Names and (Config.NameStyle == "GUI" or Config.NameStyle == "Both")
-		local Health = Config.Health
-		if Health then
-			Health = Config.HealthStyle == "Text" or Config.HealthStyle == "Both"
+	local NameOn, HealthOn = Config.Names, Config.Health
+	local NameText, NameGui = NameOn and Config.NameStyle ~= "GUI", NameOn and Config.NameStyle ~= "Text"
+	local HealthText, HealthGui = HealthOn and Config.HealthStyle ~= "GUI", HealthOn and Config.HealthStyle ~= "Text"
+	Set(Entry.NameText, "Visible", NameText)
+	if NameText then
+		Set(Entry.NameText, "Text", Label)
+		Set(Entry.NameText, "Color", Config.NameColor)
+		Set(Entry.NameText, "Position", Vector2.new(CenterX, MinY - 18))
+	end
+	Set(Entry.HealthText, "Visible", HealthText)
+	if HealthText then
+		Set(Entry.HealthText, "Text", string.format("%d HP", math.ceil(Humanoid.Health)))
+		Set(Entry.HealthText, "Color", Config.HealthColor)
+		Set(Entry.HealthText, "Position", Vector2.new(CenterX, MinY - (NameText and 34 or 18)))
+	end
+	if NameGui or HealthGui then
+		EnsureGui(Entry, Model)
+	end
+	local Gui = Entry.Gui
+	if Gui and Gui.Holder.Parent then
+		Set(Gui.NameLabel, "Visible", NameGui)
+		Set(Gui.HealthBack, "Visible", HealthGui)
+		if NameGui then
+			Set(Gui.NameLabel, "Text", Label)
+			Set(Gui.NameLabel, "TextColor3", Config.NameColor)
 		end
-		local ShowTextHealth = Health
-		local Health_v2 = Config.Health
-		if Health_v2 then
-			Health_v2 = Config.HealthStyle == "GUI" or Config.HealthStyle == "Both"
+		if HealthGui then
+			Set(Gui.HealthFill, "Size", UDim2.fromScale(math.clamp(Humanoid.Health / Humanoid.MaxHealth, 0, 1), 1))
+			Set(Gui.HealthFill, "BackgroundColor3", Config.HealthColor)
+			Set(Gui.HealthBack, "Position", UDim2.fromOffset(0, NameGui and 18 or 0))
 		end
-		local ShowGuiHealth = Health_v2
-		Set(Entry.NameText, "Visible", ShowTextName)
-		if ShowTextName then
-			Set(Entry.NameText, "Text", Label)
-			Set(Entry.NameText, "Color", Config.NameColor)
-			Set(Entry.NameText, "Position", Vector2.new(CenterX, MinY - 18))
-		end
-		Set(Entry.HealthText, "Visible", ShowTextHealth)
-		if ShowTextHealth then
-			Set(Entry.HealthText, "Text", string.format("%d HP", math.ceil(HumanoidInstance.Health)))
-			Set(Entry.HealthText, "Color", Config.HealthColor)
-			Set(Entry.HealthText, "Position", Vector2.new(CenterX, MinY - (ShowTextName and 34 or 18)))
-		end
-		if ShowGuiName or ShowGuiHealth then
-			EnsureGui(Entry, Model)
-		end
-		if Entry.Gui and Entry.Gui.Holder and Entry.Gui.Holder.Parent then
-			local NameLabel = Entry.Gui.NameLabel
-			local HealthBack = Entry.Gui.HealthBack
-			local HealthFill = Entry.Gui.HealthFill
-			Set(NameLabel, "Visible", ShowGuiName)
-			Set(HealthBack, "Visible", ShowGuiHealth)
-			if ShowGuiName then
-				Set(NameLabel, "Text", Label)
-				Set(NameLabel, "TextColor3", Config.NameColor)
-			end
-			if ShowGuiHealth then
-				Set(HealthFill, "Size", UDim2.fromScale(math.clamp(HumanoidInstance.Health / HumanoidInstance.MaxHealth, 0, 1), 1))
-				Set(HealthFill, "BackgroundColor3", Config.HealthColor)
-				Set(HealthBack, "Position", UDim2.fromOffset(0, ShowGuiName and 18 or 0))
-			end
-			Set(Entry.Gui.Holder, "Size", UDim2.fromOffset(150, (ShowGuiName and 18 or 0) + (ShowGuiHealth and 8 or 0)))
-			Set(Entry.Gui.Holder, "Enabled", ShowGuiName or ShowGuiHealth)
-		elseif Entry.Gui and Entry.Gui.Holder then
-			Set(Entry.Gui.Holder, "Enabled", false)
-		end
+		Set(Gui.Holder, "Size", UDim2.fromOffset(150, (NameGui and 18 or 0) + (HealthGui and 8 or 0)))
+		Set(Gui.Holder, "Enabled", NameGui or HealthGui)
+	elseif Gui then
+		Set(Gui.Holder, "Enabled", false)
 	end
 	if Config.Chams then
 		local Target = GetVisual(Model)
 		local Highlight = EnsureHighlight(Entry, Target)
-		local HighlightColor = Config.ChamsColor
-		if Kind == "zombie" then
-			HighlightColor = ZombieColors[Type] or Config.ChamsColor
+		local TypeColor_v1 = TypeColor
+		if not TypeColor then
+			local Set_v1 = Set
+			TypeColor_v1 = Config.ChamsColor
 		end
-		Set(Highlight, "FillColor", HighlightColor)
-		Set(Highlight, "OutlineColor", HighlightColor)
+		Set(Highlight, "FillColor", TypeColor_v1)
+		local TypeColor_v2 = TypeColor
+		if not TypeColor then
+			local Set_v1 = Set
+			TypeColor_v2 = Config.ChamsColor
+		end
+		Set(Highlight, "OutlineColor", TypeColor_v2)
 		Set(Highlight, "Enabled", true)
-		local _sc21 = Entry.SuppressTarget ~= Target
-		_sc21 = _sc21 or View.Now - (Entry.SuppressAt or 0) >= 0.25
-		if _sc21 then
-			Entry.SuppressTarget = Target
-			Entry.SuppressAt = View.Now
+		if Entry.SuppressTarget ~= Target or View.Now - Entry.SuppressAt >= 0.25 then
+			Entry.SuppressTarget, Entry.SuppressAt = Target, View.Now
 			SuppressHighlights(Entry, Target, Highlight)
 		end
 	else
@@ -938,60 +763,48 @@ local function RenderModel(Model, Kind, Seen, View)
 		RestoreHighlights(Entry)
 	end
 	if Kind == "zombie" then
-		local Remaining
-		if Config.BomberTimer and Type == "Barrel" then
-			Remaining = GetFuseRemaining(Model)
-		end
+		local Remaining = Config.BomberTimer and Type == "Barrel" and GetFuseRemaining(Model) or nil
 		Set(Entry.TimerText, "Visible", Remaining ~= nil)
 		if Remaining then
-			local TimerX, TimerY
-			if Config.BomberTimerPosition == "Top" then
-				TimerX, TimerY = CenterX, MinY - 18
-			elseif Config.BomberTimerPosition == "Center" then
-				TimerX, TimerY = CenterX, (MinY + MaxY) * 0.5
-			elseif Config.BomberTimerPosition == "Left" then
-				TimerX, TimerY = MinX - 6, (MinY + MaxY) * 0.5
-			elseif Config.BomberTimerPosition == "Right" then
-				TimerX, TimerY = MaxX + 6, (MinY + MaxY) * 0.5
-			else
-				TimerX, TimerY = CenterX, MaxY + 4
+			local Where, MidY = Config.BomberTimerPosition, (MinY + MaxY) * 0.5
+			local TimerX, TimerY = CenterX, MaxY + 4
+			if Where == "Top" then
+				TimerY = MinY - 18
+			elseif Where == "Center" then
+				TimerY = MidY
+			elseif Where == "Left" then
+				TimerX, TimerY = MinX - 6, MidY
+			elseif Where == "Right" then
+				TimerX, TimerY = MaxX + 6, MidY
 			end
 			Set(Entry.TimerText, "Text", string.format("%.1fs", Remaining))
 			Set(Entry.TimerText, "Color", Config.BomberTimerColor)
 			Set(Entry.TimerText, "Position", Vector2.new(TimerX + Config.BomberTimerOffsetX, TimerY + Config.BomberTimerOffsetY))
 		end
-	end
-	if Kind == "player" then
+	else
 		local Statuses = GetStatuses(Model)
-		for Index = 1, #Entry.StatusTexts do
-			local StatusText = Entry.StatusTexts[Index]
+		for Index, StatusText in Entry.StatusTexts do
 			local Status = Statuses[Index]
+			Set(StatusText, "Visible", Status ~= nil)
 			if Status then
-				Set(StatusText, "Visible", true)
 				Set(StatusText, "Text", Status.Text)
 				Set(StatusText, "Color", Status.Color)
 				Set(StatusText, "Position", Vector2.new(CenterX, MaxY + 4 + (Index - 1) * 14))
-			else
-				Set(StatusText, "Visible", false)
 			end
 		end
 	end
 end
 local function UpdateESP()
-	if Unloaded then
-		return
-	end
 	local Now = time()
-	if Now - LastESPUpdate < 1 / 30 then
+	local _sc3 = Unloaded
+	if if Unloaded then _sc3 else Now - LastESPUpdate < 1 / 30 then
 		return
 	end
 	LastESPUpdate = Now
 	if not (ZombieConfig.Enabled or PlayerConfig.Enabled) then
 		for Model, Entry in Tracked do
 			if not Model.Parent then
-				DestroyEntry(Entry)
-				Tracked[Model] = nil
-				FuseMarks[Model] = nil
+				Drop(Model)
 			elseif not EspIdle then
 				HideEntry(Entry)
 			end
@@ -1000,113 +813,61 @@ local function UpdateESP()
 		return
 	end
 	EspIdle = false
-	if ZombieConfig.Enabled then
-		RefreshVisuals(Now)
-	end
 	local Camera = workspace.CurrentCamera
 	if not Camera then
 		return
 	end
-	local CamCF = Camera.CFrame
-	local View = RenderView
-	RenderView.Camera = Camera
-	View.Position = CamCF.Position
-	View.Look = CamCF.LookVector
-	View.Viewport = Camera.ViewportSize
-	View.Now = Now
-	local Seen = RenderSeen
-	table.clear(Seen)
 	if ZombieConfig.Enabled then
-		local Container = workspace:FindFirstChild("Zombies")
-		if Container then
-			for _, Model in Container:GetChildren() do
-				if Model:IsA("Model") then
-					RenderModel(Model, "zombie", Seen, View)
-				end
-			end
-		end
+		RefreshVisuals(Now)
 	end
-	if PlayerConfig.Enabled then
-		local Container = workspace:FindFirstChild("Players")
-		if Container then
-			for _, Model in Container:GetChildren() do
-				if Model:IsA("Model") and Model ~= LocalPlayer.Character then
-					RenderModel(Model, "player", Seen, View)
-				end
+	local View, CamCF = RenderView, Camera.CFrame
+	RenderView.Camera, RenderView.Position, RenderView.Look = Camera, CamCF.Position, CamCF.LookVector
+	View.Viewport, View.Now = Camera.ViewportSize, Now
+	table.clear(RenderSeen)
+	for _, Source in { { ZombieConfig, "Zombies", "zombie" }, { PlayerConfig, "Players", "player" } } do
+		local _sc5 = Source[1].Enabled and workspace:FindFirstChild(Source[2])
+		local Container = _sc5
+		for _, Model in _sc5 and Container:GetChildren() or {} do
+			if Model:IsA("Model") and Model ~= LocalPlayer.Character then
+				RenderModel(Model, Source[3], View)
 			end
 		end
 	end
 	for Model, Entry in Tracked do
-		if Seen[Model] then
+		if RenderSeen[Model] then
 			continue
 		end
 		if Model.Parent then
 			HideEntry(Entry)
 		else
-			DestroyEntry(Entry)
-			Tracked[Model] = nil
-			FuseMarks[Model] = nil
+			Drop(Model)
 		end
 	end
 end
-local function IsBarrel(Agent)
-	if not Agent then
-		return false
-	end
-	return Agent:GetAttribute("Type") == "Barrel"
-end
 local BlastRings = setmetatable({}, { __mode = "k" })
-local BlastRingSegments = 36
-local LastBlastRing = 0
+local BlastRingSegments, LastBlastRing = 36, 0
 local function DestroyBlastRing(Model)
-	local Ring = BlastRings[Model]
-	if not Ring then
-		return
-	end
-	for _, Line in Ring do
-		pcall(function()
-			Line:Remove()
-		end)
+	for _, Line in BlastRings[Model] or {} do
+		RemoveDrawing(Line)
 	end
 	BlastRings[Model] = nil
-end
-local function EnsureBlastRing(Model)
-	local Ring = BlastRings[Model]
-	if not Ring then
-		Ring = {}
-		BlastRings[Model] = Ring
-	end
-	for Index = #Ring + 1, BlastRingSegments do
-		local Line = Drawing.new("Line")
-		Line.Thickness = 1.5
-		Line.Transparency = 0.75
-		Line.Visible = false
-		Ring[Index] = Line
-	end
-	return Ring
 end
 local function UpdateBlastRings()
 	if Unloaded then
 		return
 	end
 	if not ZombieConfig.BlastRadius then
-		if next(BlastRings) then
-			for Model in BlastRings do
-				DestroyBlastRing(Model)
-			end
+		for Model in BlastRings do
+			DestroyBlastRing(Model)
 		end
 		return
 	end
 	local Now = time()
-	if Now - LastBlastRing < 0.05 then
+	local Camera, Container = workspace.CurrentCamera, workspace:FindFirstChild("Zombies")
+	if Now - LastBlastRing < 0.05 or not Camera or not Container then
 		return
 	end
 	LastBlastRing = Now
-	local Camera = workspace.CurrentCamera
-	local Container = workspace:FindFirstChild("Zombies")
-	if not Camera or not Container then
-		return
-	end
 	local Seen = {}
 	for _, Model in Container:GetChildren() do
 		if not (Model:IsA("Model") and IsBarrel(Model) and GetFuseRemaining(Model)) then
@@ -1114,27 +875,27 @@ local function UpdateBlastRings()
 		end
 		Seen[Model] = true
 		local Radius = Model:GetAttribute("BlastRadius")
-		if typeof(Radius) ~= "number" then
-			Radius = 10
-		end
+		local Radius_s1 = typeof(Radius) == "number" and Radius or 10
 		local BoxCFrame, BoxSize = Model:GetBoundingBox()
 		local Center = Vector3.new(BoxCFrame.Position.X, BoxCFrame.Position.Y - BoxSize.Y * 0.5 + 0.15, BoxCFrame.Position.Z)
-		local Ring = EnsureBlastRing(Model)
+		local Ring = BlastRings[Model]
+		if not Ring then
+			Ring = {}
+			BlastRings[Model] = Ring
+		end
+		for Index = #Ring + 1, BlastRingSegments do
+			Ring[Index] = NewDrawing("Line", { Thickness = 1.5, Transparency = 0.75 })
+		end
 		for Index = 1, BlastRingSegments do
-			local AngleA = (Index - 1) / BlastRingSegments * math.pi * 2
-			local AngleB = Index / BlastRingSegments * math.pi * 2
-			local First = Center + Vector3.new(math.cos(AngleA) * Radius, 0, math.sin(AngleA) * Radius)
-			local Second = Center + Vector3.new(math.cos(AngleB) * Radius, 0, math.sin(AngleB) * Radius)
-			local ScreenA, OnA = Camera:WorldToViewportPoint(First)
-			local ScreenB, OnB = Camera:WorldToViewportPoint(Second)
+			local AngleA, AngleB = (Index - 1) / BlastRingSegments * math.pi * 2, Index / BlastRingSegments * math.pi * 2
+			local ScreenA, OnA = Camera:WorldToViewportPoint(Center + Vector3.new(math.cos(AngleA) * Radius_s1, 0, math.sin(AngleA) * Radius_s1))
+			local ScreenB, OnB = Camera:WorldToViewportPoint(Center + Vector3.new(math.cos(AngleB) * Radius_s1, 0, math.sin(AngleB) * Radius_s1))
 			local Line = Ring[Index]
+			Set(Line, "Visible", OnA and OnB)
 			if OnA and OnB then
-				Set(Line, "Visible", true)
 				Set(Line, "From", Vector2.new(ScreenA.X, ScreenA.Y))
 				Set(Line, "To", Vector2.new(ScreenB.X, ScreenB.Y))
 				Set(Line, "Color", ZombieConfig.BlastRadiusColor)
-			else
-				Set(Line, "Visible", false)
 			end
 		end
 	end
@@ -1144,18 +905,15 @@ local function UpdateBlastRings()
 		end
 	end
 end
-local HitboxParts = {}
-local HitboxPartsStamp = 0
+local HitboxParts, HitboxPartsStamp = {}, 0
 local function RefreshHitboxParts()
 	local Now = time()
 	if Now - HitboxPartsStamp < 0.05 then
 		return
 	end
 	HitboxPartsStamp = Now
-	local Camera = workspace.CurrentCamera
-	local Container = workspace:FindFirstChild("Zombies")
-	local Names = HitboxPartNames[HitboxConfig.Part]
-	local List = {}
+	local Camera, Container = workspace.CurrentCamera, workspace:FindFirstChild("Zombies")
+	local Names, List = HitboxPartNames[HitboxConfig.Part], {}
 	if Camera and Container then
 		local Matched = {}
 		for _, Child in Camera:GetChildren() do
@@ -1185,198 +943,55 @@ local function RefreshHitboxParts()
 	end
 	HitboxParts = List
 end
-local function InvalidateHitboxParts()
-	HitboxPartsStamp = 0
-end
 local function FindExpandedHit(Origin, Direction, Filter)
 	local Length = Direction.Magnitude
 	if Length <= 0 then
 		return nil
 	end
-	local Unit = Direction / Length
-	local Radius = HitboxConfig.Size * 0.5
-	local BestPart, BestPoint
-	local BestAlong = math.huge
-	local BestCost = math.huge
-	local BestNormalDir
-	local BestExtent = 0
-	for Index = 1, #HitboxParts do
-		local Part = HitboxParts[Index]
-		if table.find(Filter, Part) then
-			continue
-		end
+	local Unit, Radius = Direction / Length, HitboxConfig.Size * 0.5
+	local BestPart, BestPoint, BestNormalDir
+	local BestAlong, BestCost, BestExtent = math.huge, math.huge, 0
+	for _, Part in HitboxParts do
 		local Along = (Part.Position - Origin):Dot(Unit)
-		if not (Along >= -Radius and Along <= Length + Radius) then
+		if not (Along >= -Radius and Along <= Length + Radius and not table.find(Filter, Part)) then
 			continue
 		end
 		local Clamped = math.clamp(Along, 0, Length)
 		local Point = Origin + Unit * Clamped
 		local Perp = Part.Position - Point
 		local Gap = Perp.Magnitude
-		local Bound = math.max(Part.Size.X, Part.Size.Y, Part.Size.Z) * 0.5
-		if not (Gap <= Radius + Bound) then
-			continue
-		end
-		local Extent = 0
-		local NormalDir
-		if Gap > 0.0001 then
-			NormalDir = Perp / Gap
-			local Frame = Part.CFrame
-			Extent = math.abs(NormalDir:Dot(Frame.RightVector)) * Part.Size.X * 0.5
-				+ math.abs(NormalDir:Dot(Frame.UpVector)) * Part.Size.Y * 0.5
-				+ math.abs(NormalDir:Dot(Frame.LookVector)) * Part.Size.Z * 0.5
-		end
-		local Cost = Clamped + Gap
-		if Gap <= Radius + Extent and Cost < BestCost then
-			BestPart = Part
-			BestPoint = Point
-			BestAlong = Clamped
-			BestCost = Cost
-			BestNormalDir = NormalDir
-			BestExtent = Extent
+		local Size = Part.Size
+		if Gap <= Radius + math.max(Size.X, Size.Y, Size.Z) * 0.5 then
+			local Extent, NormalDir = 0, nil
+			if Gap > 0.0001 then
+				NormalDir = Perp / Gap
+				local Frame = Part.CFrame
+				Extent = math.abs(NormalDir:Dot(Frame.RightVector)) * Size.X * 0.5
+					+ math.abs(NormalDir:Dot(Frame.UpVector)) * Size.Y * 0.5
+					+ math.abs(NormalDir:Dot(Frame.LookVector)) * Size.Z * 0.5
+			end
+			local Cost = Clamped + Gap
+			if Gap <= Radius + Extent and Cost < BestCost then
+				BestPart, BestPoint, BestAlong, BestCost, BestNormalDir, BestExtent = Part, Point, Clamped, Cost, NormalDir, Extent
+			end
 		end
 	end
 	if not BestPart then
 		return nil
 	end
-	local Normal = -Unit
-	local Position = BestPoint
+	local Normal, Position = -Unit, BestPoint
 	if BestNormalDir then
-		Position = BestPart.Position - BestNormalDir * BestExtent
-		Normal = -BestNormalDir
+		Position, Normal = BestPart.Position - BestNormalDir * BestExtent, -BestNormalDir
 	end
 	return { Instance = BestPart, Position = Position, Normal = Normal, Distance = BestAlong,
 		Material = Enum.Material.Plastic
 	}
 end
-local OldNamecall
-local AssistPicker
-local FOVCircles = {}
-local function GetFOVRadius(Camera, FOV)
-	local Half = math.tan(math.rad(math.clamp(FOV, 1, 179) * 0.5))
-	local ScreenHalf = math.tan(math.rad(Camera.FieldOfView * 0.5))
-	if ScreenHalf <= 0 then
-		return 0
-	end
-	return Half / ScreenHalf * Camera.ViewportSize.Y * 0.5
-end
-local function GetZombieLabel(Model)
-	local Type = Model:GetAttribute("Type")
-	if Type == nil then
-		return Model.Name
-	end
-	return ZombieNames[Type] or tostring(Type)
-end
-local function IsAimType(Config, Model)
-	if Config.Types.All then
-		return true
-	end
-	return Config.Types[GetZombieLabel(Model)] == true
-end
-local function GetAimPart(Model)
-	local Head = Model:FindFirstChild("Head")
-	if Head and Head:IsA("BasePart") then
-		return Head
-	end
-	local Root = Model:FindFirstChild("HumanoidRootPart")
-	if Root and Root:IsA("BasePart") then
-		return Root
-	end
-end
-local function PickAimTarget(Config)
-	local Camera = workspace.CurrentCamera
-	local Container = workspace:FindFirstChild("Zombies")
-	if not Camera or not Container then
-		return nil
-	end
-	local Center = Camera.ViewportSize * 0.5
-	local Radius = GetFOVRadius(Camera, Config.FOV)
-	local Best, BestDistance
-	for _, Model in Container:GetChildren() do
-		if Model:IsA("Model") then
-			local Humanoid = Model:FindFirstChildOfClass("Humanoid")
-			if Humanoid and Humanoid.Health > 0 and IsAimType(Config, Model) then
-				local Part = GetAimPart(Model)
-				if Part then
-					local Screen, OnScreen = Camera:WorldToViewportPoint(Part.Position)
-					if OnScreen then
-						local Distance = (Vector2.new(Screen.X, Screen.Y) - Center).Magnitude
-						if Distance <= Radius then
-							if not BestDistance or Distance < BestDistance then
-								Best = { Model = Model, Position = Part.Position }
-								BestDistance = Distance
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-	return Best
-end
-local function IsPickerActive(Picker)
-	if not Picker then
-		return true
-	end
-	if Picker.Value == "None" then
-		return true
-	end
-	return Picker:GetState()
-end
-local function EnsureFOVCircle(Name)
-	local Circle = FOVCircles[Name]
-	if not Circle then
-		Circle = Drawing.new("Circle")
-		Circle.Thickness = 1
-		Circle.Filled = false
-		Circle.NumSides = 64
-		Circle.Transparency = 0.55
-		Circle.Visible = false
-		FOVCircles[Name] = Circle
-	end
-	return Circle
-end
-local function UpdateFOVCircle(Name, Config, Color)
-	local Circle = EnsureFOVCircle(Name)
-	local Camera = workspace.CurrentCamera
-	local _sc4_s1 = not Camera or not Config.Enabled
-	if _sc4_s1 or not Config.ShowFOV then
-		Set(Circle, "Visible", false)
-		return
-	end
-	Set(Circle, "Visible", true)
-	Set(Circle, "Position", Camera.ViewportSize * 0.5)
-	Set(Circle, "Radius", GetFOVRadius(Camera, Config.FOV))
-	Set(Circle, "Color", Color)
-end
-local function UpdateAim()
-	if Unloaded then
-		return
-	end
-	UpdateFOVCircle("Assist", AimConfig.Assist, Color3.fromRGB(120, 200, 255))
-	if not AimConfig.Assist.Enabled or Library.Toggled then
-		return
-	end
-	if not IsPickerActive(AssistPicker) then
-		return
-	end
-	local Camera = workspace.CurrentCamera
-	if not Camera then
-		return
-	end
-	local Target = PickAimTarget(AimConfig.Assist)
-	if Target then
-		local Position = Camera.CFrame.Position
-		if (Target.Position - Position).Magnitude > 0.1 then
-			Camera.CFrame = CFrame.lookAt(Position, Target.Position)
-		end
-	end
-end
 local function MakeHeadshot(Result, Origin, Direction)
 	local Part = Result.Instance
-	local _sc4_s1 = not Part or not Part.Parent
-	local _sc4_s2 = _sc4_s1 or Part.Parent.Name ~= "m_Zombie"
-	if _sc4_s2 or Part.Name == "Head" then
+	local _sc3_s1 = not Part or not Part.Parent
+	local _sc3_s2 = _sc3_s1 or Part.Parent.Name ~= "m_Zombie"
+	if _sc3_s2 or Part.Name == "Head" then
 		return nil
 	end
 	if math.random() * 100 > MeleeConfig.Chance then
@@ -1387,18 +1002,13 @@ local function MakeHeadshot(Result, Origin, Direction)
 		return nil
 	end
 	local Length = Direction.Magnitude
-	local Normal = Vector3.new(0, 1, 0)
-	if Length > 0 then
-		Normal = -Direction / Length
-	end
-	return { Instance = Head, Position = Head.Position, Normal = Normal,
+	local Head_Position = Head.Position
+	local _sc6 = Length > 0 and -Direction / Length
+	return { Instance = Head, Position = Head_Position, Normal = _sc6 or Vector3.yAxis,
 		Distance = (Head.Position - Origin).Magnitude, Material = Enum.Material.Plastic
 	}
 end
 local function ProcessMeleeRay(Origin, Direction, Params, Built)
-	if typeof(Params) ~= "RaycastParams" or Params.CollisionGroup ~= "Raycast" then
-		return Built
-	end
 	local Filter = Params.FilterDescendantsInstances
 	if not Filter or not rawequal(Filter[1], workspace:FindFirstChild("Zombies")) then
 		return Built
@@ -1407,443 +1017,482 @@ local function ProcessMeleeRay(Origin, Direction, Params, Built)
 	if HitboxConfig.Enabled then
 		RefreshHitboxParts()
 		local Expanded = FindExpandedHit(Origin, Direction, Filter)
-		local _sc6 = Expanded
+		local _sc4 = Expanded
 		if Expanded then
-			_sc6 = not Result or Expanded.Distance < Result.Distance
+			_sc4 = not Result or Expanded.Distance < Result.Distance
 		end
-		if _sc6 then
+		if _sc4 then
 			Result = Expanded
 		end
 	end
 	if Result and MeleeConfig.AutoHeadshot then
-		local Headshot = MakeHeadshot(Result, Origin, Direction)
-		if Headshot then
-			Result = Headshot
-		end
+		Result = MakeHeadshot(Result, Origin, Direction) or Result
 	end
 	return Result
 end
-local function InstallHitboxHook()
-	local _sc4 = OldNamecall
-	if if OldNamecall then _sc4 else typeof(hookmetamethod) ~= "function" then
+local function RaycastHandler(Original, Self, ...)
+	local Origin, Direction, Params = ...
+	local Built = Original(Self, ...)
+	if typeof(Params) ~= "RaycastParams" or Params.CollisionGroup ~= "Raycast" then
+		return Built
+	end
+	local Ok, Result = pcall(ProcessMeleeRay, Origin, Direction, Params, Built)
+	if Ok and Result then
+		return Result
+	end
+	return Built
+end
+local function EnsureHook()
+	if HookState.Installed or typeof(hookmetamethod) ~= "function" then
 		return
 	end
-	local Previous
-	local Success, Result = pcall(function()
-		return hookmetamethod(game, "__namecall", function(Self, ...)
-			if Self ~= workspace or getnamecallmethod() ~= "Raycast" then
-				return Previous(Self, ...)
-			end
-			if typeof(checkcaller) == "function" and checkcaller() then
-				return Previous(Self, ...)
-			end
-			local Origin, Direction, Params = ...
-			local Built = Previous(Self, ...)
-			local Ok = true
-			local Resolved = Built
-			if typeof(Params) == "RaycastParams" and Params.CollisionGroup == "Raycast" then
-				Ok, Resolved = pcall(ProcessMeleeRay, Origin, Direction, Params, Built)
-			end
-			if Ok and Resolved then
-				return Resolved
-			end
-			return Built
-		end)
-	end)
-	local _sc5 = Success
-	if Success then
-		_sc5 = typeof(Result) == "function"
+	local Original
+	local Wrap = newcclosure or function(Function)
+		return Function
 	end
-	if _sc5 then
-		OldNamecall = Result
-		Previous = Result
-	end
-end
-local function RemoveHitboxHook()
-	if OldNamecall then
-		local Original = OldNamecall
-		OldNamecall = nil
-		pcall(function()
-			hookmetamethod(game, "__namecall", Original)
-		end)
+	local Ok, Result = pcall(hookmetamethod, game, "__namecall", Wrap(function(Self, ...)
+		local Handler = HookState.Handler
+		if Handler
+			and Self == workspace
+			and getnamecallmethod() == "Raycast"
+			and not (checkcaller and checkcaller())
+		then
+			return Handler(Original, Self, ...)
+		end
+		return Original(Self, ...)
+	end))
+	if Ok and typeof(Result) == "function" then
+		Original, HookState.Installed = Result, true
 	end
 end
 local function SyncHook()
 	if HitboxConfig.Enabled or MeleeConfig.AutoHeadshot then
-		InstallHitboxHook()
+		EnsureHook()
+		HookState.Handler = HookState.Installed and RaycastHandler or nil
 	else
-		RemoveHitboxHook()
+		HookState.Handler = nil
 	end
 end
-do
-	local HitboxVisuals = {}
-	local LastHitboxVisuals = 0
-	local function ClearHitboxVisuals()
-		for _, Box in HitboxVisuals do
-			pcall(function()
-				Box:Destroy()
-			end)
-		end
-		table.clear(HitboxVisuals)
+local FOVCircle
+local function GetFOVRadius(Camera, FOV)
+	local Half = math.tan(math.rad(math.clamp(FOV, 1, 179) * 0.5))
+	local ScreenHalf = math.tan(math.rad(Camera.FieldOfView * 0.5))
+	return ScreenHalf > 0 and Half / ScreenHalf * Camera.ViewportSize.Y * 0.5 or 0
+end
+local function PickAimTarget(Camera)
+	local Container = workspace:FindFirstChild("Zombies")
+	if not Container then
+		return nil
 	end
-	local function ShowBox(Part)
+	local Center, Radius = Camera.ViewportSize * 0.5, GetFOVRadius(Camera, AimConfig.FOV)
+	local Best, BestDistance
+	for _, Model in Container:GetChildren() do
+		local _sc3 = Model:IsA("Model") and Model:FindFirstChildOfClass("Humanoid")
+		local Humanoid = _sc3
+		if _sc3 and Humanoid.Health > 0 and TypeAllowed(AimConfig.Types, Model) then
+			local Part = Model:FindFirstChild("Head")
+			if not (Part and Part:IsA("BasePart")) then
+				Part = Model:FindFirstChild("HumanoidRootPart")
+			end
+			if Part and Part:IsA("BasePart") then
+				local Screen, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+				local Distance = (Vector2.new(Screen.X, Screen.Y) - Center).Magnitude
+				if OnScreen and Distance <= Radius then
+					if not BestDistance or Distance < BestDistance then
+						Best, BestDistance = Part.Position, Distance
+					end
+				end
+			end
+		end
+	end
+	return Best
+end
+local function UpdateAim()
+	if Unloaded then
+		return
+	end
+	local Camera = workspace.CurrentCamera
+	local _sc3 = FOVCircle
+	FOVCircle = if FOVCircle then _sc3 else NewDrawing("Circle", { Thickness = 1, Filled = false, NumSides = 64, Transparency = 0.55 })
+	local _sc4 = Camera ~= nil and AimConfig.Enabled and AimConfig.ShowFOV
+	Set(FOVCircle, "Visible", _sc4)
+	if _sc4 then
+		Set(FOVCircle, "Position", Camera.ViewportSize * 0.5)
+		Set(FOVCircle, "Radius", GetFOVRadius(Camera, AimConfig.FOV))
+		Set(FOVCircle, "Color", Color3.fromRGB(120, 200, 255))
+	end
+	local _sc5_s1 = not Camera or not AimConfig.Enabled
+	if _sc5_s1 or Library.Toggled then
+		return
+	end
+	if AssistPicker and AssistPicker.Value ~= "None" and not AssistPicker:GetState() then
+		return
+	end
+	local Target = PickAimTarget(Camera)
+	local Position = Camera.CFrame.Position
+	if Target and (Target - Position).Magnitude > 0.1 then
+		Camera.CFrame = CFrame.lookAt(Position, Target)
+	end
+end
+local HitboxVisuals, LastHitboxVisuals = {}, 0
+local function ClearHitboxVisuals()
+	for _, Box in HitboxVisuals do
+		pcall(Box.Destroy, Box)
+	end
+	table.clear(HitboxVisuals)
+end
+local function UpdateHitboxVisuals()
+	local Now = time()
+	local _sc3 = Unloaded
+	if if Unloaded then _sc3 else Now - LastHitboxVisuals < 0.05 then
+		return
+	end
+	LastHitboxVisuals = Now
+	if not HitboxConfig.Show then
+		if next(HitboxVisuals) then
+			ClearHitboxVisuals()
+		end
+		return
+	end
+	RefreshHitboxParts()
+	local Seen = {}
+	local Pad = HitboxConfig.Enabled and HitboxConfig.Size or 0
+	for _, Part in HitboxParts do
+		Seen[Part] = true
 		local Box = HitboxVisuals[Part]
 		if not Box or Box.Parent ~= Part then
 			Box = Instance.new("BoxHandleAdornment")
-			Box.Name = "UmberHitbox"
-			Box.Adornee = Part
-			Box.Color3 = Color3.fromRGB(255, 170, 80)
-			Box.AlwaysOnTop = true
+			Box.Name, Box.Adornee, Box.Color3, Box.AlwaysOnTop = "UmberHitbox", Part, Color3.fromRGB(255, 170, 80), true
 			Box.Parent = Part
 			HitboxVisuals[Part] = Box
-		end
-		local Pad = 0
-		if HitboxConfig.Enabled then
-			Pad = HitboxConfig.Size
 		end
 		Set(Box, "Size", Part.Size + Vector3.new(Pad, Pad, Pad))
 		Set(Box, "Transparency", HitboxConfig.Transparency)
 	end
-	local function UpdateHitboxVisuals()
-		if Unloaded then
-			return
-		end
-		local Now = time()
-		if Now - LastHitboxVisuals < 0.05 then
-			return
-		end
-		LastHitboxVisuals = Now
-		if not HitboxConfig.Show then
-			if next(HitboxVisuals) then
-				ClearHitboxVisuals()
-			end
-			return
-		end
-		RefreshHitboxParts()
-		local Seen = {}
-		for Index = 1, #HitboxParts do
-			local Part = HitboxParts[Index]
-			Seen[Part] = true
-			ShowBox(Part)
-		end
-		for Part, Box in HitboxVisuals do
-			if not Seen[Part] then
-				pcall(function()
-					Box:Destroy()
-				end)
-				HitboxVisuals[Part] = nil
-			end
+	for Part, Box in HitboxVisuals do
+		if not Seen[Part] then
+			pcall(Box.Destroy, Box)
+			HitboxVisuals[Part] = nil
 		end
 	end
-	local ProjectileTimers = setmetatable({}, { __mode = "k" })
-	local LastProjectileTimer = 0
-	local TrajectoryLines
-	local LocalMouse = LocalPlayer:GetMouse()
-	local ThrowFilter = RaycastParams.new()
-	ThrowFilter.FilterType = Enum.RaycastFilterType.Exclude
-	local ThrowIgnore = {}
-	local function ClearProjectileTimers()
-		for _, Entry in ProjectileTimers do
-			pcall(function()
-				Entry.Text:Remove()
-			end)
-		end
-		table.clear(ProjectileTimers)
-	end
-	local function TrackProjectile(Projectile)
-		local _sc4 = Unloaded
-		if if Unloaded then _sc4 else not ThrowableConfig.MortarTimer then
-			return
-		end
-		if not Projectile:IsA("ValueBase") or ProjectileTimers[Projectile] then
-			return
-		end
-		local Fuse = Projectile:GetAttribute("FuseTimer")
-		if typeof(Fuse) ~= "number" then
-			return
-		end
-		local Start = Projectile:GetAttribute("Start")
-		local Character = LocalPlayer.Character
-		local _sc6 = Character and Character:FindFirstChild("HumanoidRootPart")
-		local Root = _sc6
-		if typeof(Start) ~= "Vector3" or not _sc6 then
-			return
-		end
-		if (Start - Root.Position).Magnitude > 12 then
-			return
-		end
-		ProjectileTimers[Projectile] = { Text = CreateText(14), Fuse = Fuse, Started = time() }
-	end
-	local function UntrackProjectile(Projectile)
-		local Entry = ProjectileTimers[Projectile]
-		if not Entry then
-			return
-		end
-		pcall(function()
-			Entry.Text:Remove()
-		end)
+end
+local ProjectileTimers = setmetatable({}, { __mode = "k" })
+local LastProjectileTimer, TrajectoryLines = 0, nil
+local LocalMouse = LocalPlayer:GetMouse()
+local ThrowFilter = RaycastParams.new()
+ThrowFilter.FilterType = Enum.RaycastFilterType.Exclude
+local ThrowIgnore = {}
+local function UntrackProjectile(Projectile)
+	local Entry = ProjectileTimers[Projectile]
+	if Entry then
+		RemoveDrawing(Entry.Text)
 		ProjectileTimers[Projectile] = nil
 	end
-	local function UpdateProjectileTimers(Now)
-		if not ThrowableConfig.MortarTimer then
-			if next(ProjectileTimers) then
-				ClearProjectileTimers()
-			end
-			return
-		end
-		if Now - LastProjectileTimer < 1 / 30 then
-			return
-		end
-		LastProjectileTimer = Now
-		local Camera = workspace.CurrentCamera
-		if not Camera then
-			return
-		end
-		for Projectile, Entry in ProjectileTimers do
-			if not Projectile.Parent then
-				UntrackProjectile(Projectile)
-			else
-				local Remaining = Entry.Fuse - (Now - Entry.Started)
-				local Screen
-				if typeof(Projectile.Value) == "Vector3" then
-					Screen = Camera:WorldToViewportPoint(Projectile.Value)
+end
+local function ClearProjectileTimers()
+	for Projectile in ProjectileTimers do
+		UntrackProjectile(Projectile)
+	end
+end
+local function TrackProjectile(Projectile)
+	local _sc3 = Unloaded
+	local _sc3_s1 = if Unloaded then _sc3 else not ThrowableConfig.MortarTimer
+	local _sc3_s2 = _sc3_s1 or not Projectile:IsA("ValueBase")
+	if _sc3_s2 or ProjectileTimers[Projectile] then
+		return
+	end
+	local Fuse, Start = Projectile:GetAttribute("FuseTimer"), Projectile:GetAttribute("Start")
+	local Character = LocalPlayer.Character
+	local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+	local _sc5_s1 = typeof(Fuse) ~= "number" or typeof(Start) ~= "Vector3"
+	local _sc5_s2 = _sc5_s1 or not Root
+	if _sc5_s2 or (Start - Root.Position).Magnitude > 12 then
+		return
+	end
+	ProjectileTimers[Projectile] = { Text = CreateText(14), Fuse = Fuse, Started = time() }
+end
+local function UpdateProjectileTimers(Now)
+	if not ThrowableConfig.MortarTimer then
+		ClearProjectileTimers()
+		return
+	end
+	if Now - LastProjectileTimer < 1 / 30 then
+		return
+	end
+	LastProjectileTimer = Now
+	local Camera = workspace.CurrentCamera
+	for Projectile, Entry in ProjectileTimers do
+		if not Projectile.Parent then
+			UntrackProjectile(Projectile)
+		elseif Camera then
+			local Remaining = Entry.Fuse - (Now - Entry.Started)
+			local _sc3 = typeof(Projectile.Value) == "Vector3" and Camera:WorldToViewportPoint(Projectile.Value)
+			local Screen = _sc3
+			local _sc4 = _sc3 and Remaining > 0 and Screen.Z > 0
+			Set(Entry.Text, "Visible", _sc4)
+			if _sc4 then
+				Set(Entry.Text, "Text", string.format("%.1f", Remaining))
+				local Entry_Text = Entry.Text
+				local _sc6 = Remaining < 1
+				if _sc6 then
+					local _t3985 = Set
+					_sc6 = Color3.fromRGB(255, 70, 70)
 				end
-				if Screen and Remaining > 0 and Screen.Z > 0 then
-					Set(Entry.Text, "Visible", true)
-					Set(Entry.Text, "Text", string.format("%.1f", Remaining))
-					local Entry_Text = Entry.Text
-					local _sc6 = Remaining < 1
-					if _sc6 then
-						local _t4370 = Set
-						_sc6 = Color3.fromRGB(255, 70, 70)
-					end
-					local _sc5 = _sc6
-					if not _sc6 then
-						local _t4370 = Set
-						_sc5 = Color3.fromRGB(255, 170, 80)
-					end
-					Set(Entry_Text, "Color", _sc5)
-					Set(Entry.Text, "Position", Vector2.new(Screen.X, Screen.Y - 20))
-				else
-					Set(Entry.Text, "Visible", false)
+				local _sc5 = _sc6
+				if not _sc6 then
+					local _t3985 = Set
+					_sc5 = Color3.fromRGB(255, 170, 80)
 				end
+				Set(Entry_Text, "Color", _sc5)
+				Set(Entry.Text, "Position", Vector2.new(Screen.X, Screen.Y - 20))
 			end
 		end
 	end
-	local function EnsureTrajectoryLines()
-		if TrajectoryLines then
-			return TrajectoryLines
-		end
+end
+local function HideTrajectory()
+	for _, Line in TrajectoryLines or {} do
+		Set(Line, "Visible", false)
+	end
+end
+local function SolveThrow(Start, Target, Speed)
+	local DeltaX, DeltaZ, DeltaY = Target.X - Start.X, Target.Z - Start.Z, Target.Y - Start.Y
+	local Flat = DeltaX * DeltaX + DeltaZ * DeltaZ
+	local Gravity, Speed2 = -workspace.Gravity, Speed * Speed
+	if Flat <= 0 then
+		local Vector3_new = Vector3.new
+		local _sc4 = DeltaY < 0 and -Speed
+		return Vector3_new(0, _sc4 or DeltaY > 0 and Speed or 0, 0)
+	end
+	local Scale = Flat / (2 * (Flat + DeltaY * DeltaY))
+	local Root = Speed2 * (2 * Gravity * DeltaY + Speed2) - Gravity * Gravity * Flat
+	if Root <= 0 then
+		return nil
+	end
+	local High = Scale * (Gravity * DeltaY + Speed2 + math.sqrt(Root))
+	if High < 0 or Speed2 - High < 0 then
+		return nil
+	end
+	local FlatRoot, Vertical = math.sqrt(Flat), math.sqrt(Speed2 - High)
+	if not (Gravity * Flat / (2 * Speed2) < DeltaY) then
+		Vertical = -Vertical
+	end
+	return Vector3.new(DeltaX / FlatRoot * math.sqrt(High), Vertical, DeltaZ / FlatRoot * math.sqrt(High))
+end
+local function UpdateTrajectory()
+	local Character, Camera = LocalPlayer.Character, workspace.CurrentCamera
+	local _sc3 = ThrowableConfig.Trajectory and Character and Character:FindFirstChildOfClass("Tool")
+	local Tool = _sc3
+	local _sc4 = _sc3 and Tool:FindFirstChild("Configuration")
+	local Configuration = _sc4
+	local Speed = _sc4 and Configuration:GetAttribute("ThrowSpeed")
+	local Delay = Configuration and Configuration:GetAttribute("ThrowDelay")
+	local _sc7 = Character
+	if Character then
+		local _sc8_s1 = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
+		_sc7 = _sc8_s1 or Character:FindFirstChild("HumanoidRootPart")
+	end
+	local Hand = _sc7
+	local _sc9 = _sc7
+		and Camera
+		and typeof(Speed) == "number"
+		and typeof(Delay) == "number"
+		and SolveThrow(Hand.Position, LocalMouse.Hit.Position, Speed)
+	local Velocity = _sc9
+	if not _sc9 then
+		HideTrajectory()
+		return
+	end
+	if not TrajectoryLines then
 		TrajectoryLines = {}
 		for Index = 1, 24 do
-			local Line = Drawing.new("Line")
-			Line.Thickness = 2
-			Line.Visible = false
-			TrajectoryLines[Index] = Line
-		end
-		return TrajectoryLines
-	end
-	local function HideTrajectory()
-		if not TrajectoryLines then
-			return
-		end
-		for Index = 1, 24 do
-			Set(TrajectoryLines[Index], "Visible", false)
+			TrajectoryLines[Index] = NewDrawing("Line", { Thickness = 2 })
 		end
 	end
-	local function SolveThrow(Start, Target, Speed)
-		local DeltaX = Target.X - Start.X
-		local DeltaZ = Target.Z - Start.Z
-		local DeltaY = Target.Y - Start.Y
-		local Flat = DeltaX * DeltaX + DeltaZ * DeltaZ
-		local Gravity = -workspace.Gravity
-		local Speed2 = Speed * Speed
-		if Flat <= 0 then
-			return Vector3.new(0, DeltaY < 0 and -Speed or DeltaY > 0 and Speed or 0, 0)
+	local Gravity, Point, Step, Count = Vector3.new(0, -workspace.Gravity, 0), Hand.Position, 0.06, 0
+	ThrowIgnore[1], ThrowIgnore[2] = Character, Camera
+	ThrowFilter.FilterDescendantsInstances = ThrowIgnore
+	for Index = 1, 24 do
+		local Next = Point + Velocity * Step + Gravity * 0.0018
+		local Result = workspace:Raycast(Point, Next - Point, ThrowFilter)
+		Velocity += Gravity * Step
+		if Result then
+			Next = Result.Position
 		end
-		local Scale = Flat / (2 * (Flat + DeltaY * DeltaY))
-		local Root = Speed2 * (2 * Gravity * DeltaY + Speed2) - Gravity * Gravity * Flat
-		if Root <= 0 then
-			return nil
+		local From, To = Camera:WorldToViewportPoint(Point), Camera:WorldToViewportPoint(Next)
+		local _t4315 = TrajectoryLines[Index]
+		local _sc10 = From.Z > 0 and To.Z > 0
+		local Line = _t4315
+		Set(Line, "Visible", _sc10)
+		if _sc10 then
+			Set(Line, "Color", Color3.fromRGB(255, 170, 80))
+			Set(Line, "From", Vector2.new(From.X, From.Y))
+			Set(Line, "To", Vector2.new(To.X, To.Y))
 		end
-		local SqrtRoot = math.sqrt(Root)
-		local High = Scale * (Gravity * DeltaY + Speed2 + SqrtRoot)
-		if High < 0 or Speed2 - High < 0 then
-			return nil
-		end
-		local FlatRoot = math.sqrt(Flat)
-		local Vertical = math.sqrt(Speed2 - High)
-		if not (Gravity * Flat / (2 * Speed2) < DeltaY) then
-			Vertical = -Vertical
-		end
-		return Vector3.new(DeltaX / FlatRoot * math.sqrt(High), Vertical, DeltaZ / FlatRoot * math.sqrt(High))
-	end
-	local function UpdateTrajectory()
-		if not ThrowableConfig.Trajectory then
-			HideTrajectory()
-			return
-		end
-		local Character = LocalPlayer.Character
-		local _sc4 = Character and Character:FindFirstChildOfClass("Tool")
-		local Tool = _sc4
-		local _sc5 = _sc4 and Tool:FindFirstChild("Configuration")
-		local Configuration = _sc5
-		local Speed = _sc5 and Configuration:GetAttribute("ThrowSpeed")
-		local Delay = Configuration and Configuration:GetAttribute("ThrowDelay")
-		local Camera = workspace.CurrentCamera
-		if typeof(Speed) ~= "number" or typeof(Delay) ~= "number" or not Camera then
-			HideTrajectory()
-			return
-		end
-		local _sc9_s1 = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
-		local _sc9_s2 = _sc9_s1 or Character:FindFirstChild("HumanoidRootPart")
-		local Hand = _sc9_s2
-		if not _sc9_s2 then
-			HideTrajectory()
-			return
-		end
-		local Target = LocalMouse.Hit.Position
-		if typeof(Target) ~= "Vector3" then
-			HideTrajectory()
-			return
-		end
-		local Velocity = SolveThrow(Hand.Position, Target, Speed)
-		if not Velocity then
-			HideTrajectory()
-			return
-		end
-		local Lines = EnsureTrajectoryLines()
-		local Gravity = Vector3.new(0, -workspace.Gravity, 0)
-		local Point = Hand.Position
-		local Step = 0.06
-		local Count = 0
-		ThrowIgnore[1] = Character
-		ThrowIgnore[2] = Camera
-		ThrowFilter.FilterDescendantsInstances = ThrowIgnore
-		for Index = 1, 24 do
-			local Next = Point + Velocity * Step + Gravity * 0.0018
-			local Result = workspace:Raycast(Point, Next - Point, ThrowFilter)
-			local Stop = false
-			Velocity += Gravity * Step
-			if Result then
-				Next = Result.Position
-				Stop = true
-			end
-			local From = Camera:WorldToViewportPoint(Point)
-			local To = Camera:WorldToViewportPoint(Next)
-			local Line = Lines[Index]
-			if From.Z > 0 and To.Z > 0 then
-				Set(Line, "Visible", true)
-				Set(Line, "Color", Color3.fromRGB(255, 170, 80))
-				Set(Line, "From", Vector2.new(From.X, From.Y))
-				Set(Line, "To", Vector2.new(To.X, To.Y))
-			else
-				Set(Line, "Visible", false)
-			end
-			Count = Index
-			Point = Next
-			if Stop then
-				break
-			end
-		end
-		for Index = Count + 1, 24 do
-			Set(Lines[Index], "Visible", false)
+		Count, Point = Index, Next
+		if Result then
+			break
 		end
 	end
-	local function UpdateThrowables()
-		if Unloaded then
-			return
-		end
+	for Index = Count + 1, 24 do
+		Set(TrajectoryLines[Index], "Visible", false)
+	end
+end
+local function UpdateThrowables()
+	if not Unloaded then
 		UpdateProjectileTimers(time())
 		UpdateTrajectory()
 	end
-	task.spawn(function()
-		local Folder = workspace:WaitForChild("Projectiles", 60)
-		if Unloaded or not Folder then
-			return
-		end
-		Track(Folder.ChildAdded:Connect(TrackProjectile))
-		Track(Folder.ChildRemoved:Connect(UntrackProjectile))
-	end)
-	local function Cleanup()
-		Unloaded = true
-		for _, Connection in Connections do
-			if Connection.Connected then
-				Connection:Disconnect()
-			end
-		end
-		table.clear(Connections)
-		for _, Entry in Tracked do
-			DestroyEntry(Entry)
-		end
-		table.clear(Tracked)
-		table.clear(Visuals)
-		table.clear(FuseMarks)
-		ClearHitboxVisuals()
-		RemoveHitboxHook()
-		ClearProjectileTimers()
-		HideTrajectory()
-		for Model in BlastRings do
-			DestroyBlastRing(Model)
-		end
-		for _, Circle in FOVCircles do
-			pcall(function()
-				Circle:Remove()
-			end)
-		end
-		table.clear(FOVCircles)
-		RestoreWorldLighting()
-		pcall(function()
-			RunService:UnbindFromRenderStep("UmberAim")
-		end)
-		if TrajectoryLines then
-			for _, Line in TrajectoryLines do
-				pcall(function()
-					Line:Remove()
-				end)
-			end
-			TrajectoryLines = nil
-		end
-		ClearChargeSpeed()
-		ClearSwingBuffs()
-		local Character = LocalPlayer.Character
-		if Character then
-			pcall(function()
-				Character:SetAttribute("SwingSpeedScalar", nil)
-			end)
-		end
-		getgenv().UmberUnload = nil
-	end
-	local function BindCharacter()
-		SpeedModifier = nil
-		ApplySwingSpeed()
-		ApplyChargeSpeed()
-		local Character = LocalPlayer.Character
-		if Character then
-			Track(Character.ChildAdded:Connect(function(Child)
-				if Child:IsA("Tool") then
-					ApplySwingSpeed()
-				end
-			end))
-		end
-	end
-	Track(LocalPlayer.CharacterAdded:Connect(BindCharacter))
-	Track(RunService.RenderStepped:Connect(UpdateESP))
-	Track(RunService.RenderStepped:Connect(UpdateHitboxVisuals))
-	Track(RunService.RenderStepped:Connect(UpdateThrowables))
-	Track(RunService.RenderStepped:Connect(UpdateBlastRings))
-	Track(RunService.RenderStepped:Connect(GuardWorldFog))
-	Track(RunService.Heartbeat:Connect(SpoofGrabPosition))
-	Track(RunService.Heartbeat:Connect(ApplySwingSpeed))
-	pcall(function()
-		RunService:BindToRenderStep("UmberAim", Enum.RenderPriority.Camera.Value + 1, UpdateAim)
-	end)
-	Library:OnUnload(Cleanup)
 end
-getgenv().UmberUnload = function()
+task.spawn(function()
+	local Folder = workspace:WaitForChild("Projectiles", 60)
+	if Unloaded or not Folder then
+		return
+	end
+	Track(Folder.ChildAdded:Connect(TrackProjectile))
+	Track(Folder.ChildRemoved:Connect(UntrackProjectile))
+end)
+local function Cleanup()
+	Unloaded = true
+	HookState.Handler = nil
+	for _, Connection in Connections do
+		Connection:Disconnect()
+	end
+	table.clear(Connections)
+	for Model in Tracked do
+		Drop(Model)
+	end
+	for Model in BlastRings do
+		DestroyBlastRing(Model)
+	end
+	table.clear(Visuals)
+	ClearHitboxVisuals()
+	ClearProjectileTimers()
+	for _, Line in TrajectoryLines or {} do
+		RemoveDrawing(Line)
+	end
+	TrajectoryLines = nil
+	if FOVCircle then
+		RemoveDrawing(FOVCircle)
+		FOVCircle = nil
+	end
+	pcall(RunService.UnbindFromRenderStep, RunService, "UmberAim")
+	Lighting.Ambient, Lighting.OutdoorAmbient, Lighting.Brightness = WorldOriginal.Ambient, WorldOriginal.OutdoorAmbient, WorldOriginal.Brightness
+	RestoreFog()
+	ClearChargeSpeed()
+	ClearSwingBuffs()
+	Env.UmberUnload = nil
+end
+local RenderSteps = { ESP = UpdateESP, HitboxVisuals = UpdateHitboxVisuals, Throwables = UpdateThrowables,
+	BlastRings = UpdateBlastRings, Fog = GuardWorldFog
+}
+local HeartSteps = { AntiGrab = SpoofGrabPosition, SwingSpeed = ApplySwingSpeed }
+local Failed = {}
+local function RunSteps(Steps)
+	for Name, Step in Steps do
+		local Ok, Err = pcall(Step)
+		if not Ok and not Failed[Name] then
+			Failed[Name] = true
+			warn("Umber: " .. Name .. " failed: " .. tostring(Err))
+		end
+	end
+end
+Track(LocalPlayer.CharacterAdded:Connect(function()
+	SpeedModifier = nil
+	ApplyChargeSpeed()
+end))
+Track(RunService.RenderStepped:Connect(function()
+	RunSteps(RenderSteps)
+end))
+Track(RunService.Heartbeat:Connect(function()
+	if not Unloaded then
+		RunSteps(HeartSteps)
+	end
+end))
+pcall(RunService.BindToRenderStep, RunService, "UmberAim", Enum.RenderPriority.Camera.Value + 1, function()
+	local Ok, Err = pcall(UpdateAim)
+	if not Ok and not Failed.Aim then
+		Failed.Aim = true
+		warn("Umber: Aim failed: " .. tostring(Err))
+	end
+end)
+Library:OnUnload(Cleanup)
+function Env.UmberUnload()
 	Library:Unload()
 end
-local MovementGroup = Pace(Tabs.Player:AddGroupbox({ Name = "Movement", Side = "Left", IconName = "footprints" }))
+local function Bind(Config, Key, After)
+	return function(Value)
+		Config[Key] = Value
+		if After then
+			After(Value)
+		end
+	end
+end
+local function TypesCallback(Config)
+	return function(Value)
+		local Types = {}
+		for Key in Value do
+			Types[Key] = true
+		end
+		Config.Types = Types
+	end
+end
+local function AddDropdown(Group, Name, Config, Key, Text, Tip, Values, Default, After)
+	return Group:AddDropdown(Name, { Values = Values, Default = Default, Text = Text, Tooltip = Tip, Callback = Bind(Config, Key, After) })
+end
+local function AddSlider(Group, Name, Config, Key, Text, Tip, Default, Min, Max, Extra, After)
+	local Info = { Text = Text, Tooltip = Tip, Default = Default, Min = Min, Max = Max, Rounding = 0,
+		Callback = Bind(Config, Key, After)
+	}
+	for Field, Value in Extra or {} do
+		Info[Field] = Value
+	end
+	return Group:AddSlider(Name, Info)
+end
+local function AddFeature(Group, Prefix, Config, Master, Key, Text, Tip, Default, ColorKey, ColorDefault, ColorTitle)
+	local Toggle = Group:AddToggle(Prefix .. Key, { Text = Text, Tooltip = Tip, Default = Default,
+		Callback = Bind(Config, Key, function(Value)
+			if Value then
+				EnsureEnabled(Master)
+			end
+		end)
+	})
+	if ColorKey then
+		Toggle:AddColorPicker(Prefix .. Key .. "Color", { Default = ColorDefault, Title = ColorTitle, Callback = Bind(Config, ColorKey) })
+	end
+	return Toggle
+end
+local function AddCommonESP(Group, Prefix, Config, Master, Noun, BoxColor)
+	AddFeature(Group, Prefix, Config, Master, "Box", "Box", "Box around each " .. Noun .. ".", true, BoxColor and "BoxColor", BoxColor, "Box Color")
+	AddDropdown(Group, Prefix .. "BoxStyle", Config, "BoxStyle", "Box Style", "Plain box, corner brackets, or a filled box.", { "Box", "Corner", "Filled Box" }, "Box")
+	AddFeature(Group, Prefix, Config, Master, "Chams", "Chams", "Colours the " .. Noun .. " model.", false, BoxColor and "ChamsColor", BoxColor, "Chams Color")
+	local _sc3 = BoxColor
+	if not BoxColor then
+		local AddFeature_v1 = AddFeature
+		_sc3 = Color3.fromRGB(164, 91, 38)
+	end
+	AddFeature(Group, Prefix, Config, Master, "Tracers", "Tracers", "Line from your screen to them.", false, "TracerColor", _sc3, "Tracer Color")
+	AddFeature(Group, Prefix, Config, Master, "Names", "Names", "Name above the box.", false, "NameColor", Color3.fromRGB(255, 255, 255), "Name Color")
+	AddDropdown(Group, Prefix .. "NameStyle", Config, "NameStyle", "Name Display", "Text draws it, GUI is a label.", { "Text", "GUI", "Both" }, "Text")
+	AddFeature(Group, Prefix, Config, Master, "Health", "Health Bar", "Health under the name.", false, "HealthColor", Color3.fromRGB(90, 200, 90), "Health Color")
+	AddDropdown(Group, Prefix .. "HealthStyle", Config, "HealthStyle", "Health Display", "How the health is drawn.", { "Text", "GUI", "Both" }, "Text")
+	Group:AddToggle(Prefix .. "Distance", { Text = "Show Distance", Tooltip = "Distance in studs next to the name.", Default = true,
+		Callback = Bind(Config, "Distance")
+	})
+end
+local AvatarUrl = string.format("rbxthumb://type=AvatarHeadShot&id=%s&w=150&h=150", LocalPlayer.UserId)
+local Greetings = { "Welcome to Umber, %s", "Greetings, %s", "Good to see you, %s", "Umber is ready, %s",
+	"Back again, %s?"
+}
+local AboutGroup = Tabs.Main:AddGroupbox({ Name = "About", Side = "Left", IconName = "circle-user" })
+AboutGroup:AddImage("AboutAvatar", { Image = AvatarUrl, Height = 72, ScaleType = Enum.ScaleType.Fit })
+AboutGroup:AddLabel({ Text = string.format("%s (@%s)", LocalPlayer.DisplayName, LocalPlayer.Name), DoesWrap = true,
+	Size = 16
+})
+AboutGroup:AddLabel({ Text = string.format(Greetings[math.random(#Greetings)], LocalPlayer.DisplayName), DoesWrap = true,
+	Size = 14
+})
+task.wait()
+local MovementGroup = Tabs.Player:AddGroupbox({ Name = "Movement", Side = "Left", IconName = "footprints" })
 MovementGroup:AddToggle("WalkSpeedToggle", { Text = "Walkspeed Toggle",
 	Tooltip = "Borrows the game's Charge speed buff so your speed holds through swings and reloads.",
 	Default = false,
@@ -1861,434 +1510,98 @@ MovementGroup:AddSlider("WalkSpeedValue", { Text = "Walk Speed", Tooltip = "How 
 		end
 	end
 })
-local ProtectionGroup = Pace(Tabs.Player:AddGroupbox({ Name = "Protection", Side = "Right", IconName = "shield" }))
+local ProtectionGroup = Tabs.Player:AddGroupbox({ Name = "Protection", Side = "Right", IconName = "shield" })
 ProtectionGroup:AddToggle("AntiGrab", { Text = "Anti Grab", Tooltip = "Moves you out of grab range on paper so shamblers can't latch on.",
 	Default = false,
 	["Callback"] = function(Value)
 		AntiGrabEnabled = Value
 	end
 })
-local ESPGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "ESP", Side = "Left", IconName = "scan-eye" }))
+task.wait()
+local ESPGroup = Tabs.Visuals:AddGroupbox({ Name = "ESP", Side = "Left", IconName = "scan-eye" })
 ESPGroup:AddToggle("ZombieESP", { Text = "Zombie ESP", Tooltip = "Turns on all the zombie visuals.", Default = false,
-	["Callback"] = function(Value)
-		ZombieConfig.Enabled = Value
-	end
+	Callback = Bind(ZombieConfig, "Enabled")
 })
 ESPGroup:AddToggle("PlayerESP", { Text = "Player ESP", Tooltip = "Turns on all the player visuals.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Enabled = Value
-	end
+	Callback = Bind(PlayerConfig, "Enabled")
 })
-local ZombieGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Zombie ESP Options", Side = "Left", IconName = "crosshair" }))
+local ZombieGroup = Tabs.Visuals:AddGroupbox({ Name = "Zombie ESP Options", Side = "Left", IconName = "crosshair" })
 ZombieGroup:AddDropdown("ZombieType", { Values = ZombieTypeValues, Default = { "All" }, Text = "Zombie Type",
-	Tooltip = "Only draw the types you tick.", Multi = true,
-	["Callback"] = function(Value)
-		local Types = {}
-		for Key in Value do
-			Types[Key] = true
-		end
-		ZombieConfig.Types = Types
-	end
+	Tooltip = "Only draw the types you tick.", Multi = true, Callback = TypesCallback(ZombieConfig)
 })
-ZombieGroup:AddToggle("ZombieBox", { Text = "Box", Tooltip = "Box around each zombie.", Default = true,
-	["Callback"] = function(Value)
-		ZombieConfig.Box = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-})
-ZombieGroup:AddDropdown("ZombieBoxStyle", { Values = { "Box", "Corner", "Filled Box" }, Default = "Box", Text = "Box Style",
-	Tooltip = "Plain box, corner brackets, or a filled box.",
-	["Callback"] = function(Value)
-		ZombieConfig.BoxStyle = Value
-	end
-})
-ZombieGroup:AddToggle("ZombieChams", { Text = "Chams", Tooltip = "Colours the zombie itself.", Default = false,
-	["Callback"] = function(Value)
-		ZombieConfig.Chams = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-})
-ZombieGroup:AddToggle("ZombieTracers", { Text = "Tracers", Tooltip = "Line from your screen to them.", Default = false,
-	["Callback"] = function(Value)
-		ZombieConfig.Tracers = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-}):AddColorPicker("ZombieTracersColor", { Default = Color3.fromRGB(164, 91, 38), Title = "Tracer Color",
-	["Callback"] = function(Value)
-		ZombieConfig.TracerColor = Value
-	end
-})
-ZombieGroup:AddToggle("ZombieNames", { Text = "Names", Tooltip = "Zombie type above the box.", Default = false,
-	["Callback"] = function(Value)
-		ZombieConfig.Names = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-}):AddColorPicker("ZombieNamesColor", { Default = Color3.fromRGB(255, 255, 255), Title = "Name Color",
-	["Callback"] = function(Value)
-		ZombieConfig.NameColor = Value
-	end
-})
-ZombieGroup:AddDropdown("ZombieNameStyle", { Values = { "Text", "GUI", "Both" }, Default = "Text", Text = "Name Display",
-	Tooltip = "Text draws it, GUI is a label.",
-	["Callback"] = function(Value)
-		ZombieConfig.NameStyle = Value
-	end
-})
-ZombieGroup:AddToggle("ZombieHealth", { Text = "Health Bar", Tooltip = "Health under the name.", Default = false,
-	["Callback"] = function(Value)
-		ZombieConfig.Health = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-}):AddColorPicker("ZombieHealthColor", { Default = Color3.fromRGB(90, 200, 90), Title = "Health Color",
-	["Callback"] = function(Value)
-		ZombieConfig.HealthColor = Value
-	end
-})
-ZombieGroup:AddDropdown("ZombieHealthStyle", { Values = { "Text", "GUI", "Both" }, Default = "Text", Text = "Health Display",
-	Tooltip = "How the health is drawn.",
-	["Callback"] = function(Value)
-		ZombieConfig.HealthStyle = Value
-	end
-})
-ZombieGroup:AddToggle("ZombieDistance", { Text = "Show Distance", Tooltip = "Distance in studs next to the name.", Default = true,
-	["Callback"] = function(Value)
-		ZombieConfig.Distance = Value
-	end
-})
-ZombieGroup:AddToggle("ZombieBomberTimer", { Text = "Bomber Timer", Tooltip = "Countdown before a bomber blows up.", Default = true,
-	["Callback"] = function(Value)
-		ZombieConfig.BomberTimer = Value
-		if Value then
-			EnsureEnabled("ZombieESP")
-		end
-	end
-}):AddColorPicker("ZombieBomberTimerColor", { Default = Color3.fromRGB(255, 90, 60), Title = "Bomber Timer Color",
-	["Callback"] = function(Value)
-		ZombieConfig.BomberTimerColor = Value
-	end
-})
-ZombieGroup:AddDropdown("ZombieBomberTimerPosition", { Values = { "Bottom", "Top", "Center", "Left", "Right" }, Default = "Bottom",
-	Text = "Timer Position", Tooltip = "Where the countdown sits.",
-	["Callback"] = function(Value)
-		ZombieConfig.BomberTimerPosition = Value
-	end
-})
-ZombieGroup:AddSlider("ZombieBomberTimerOffsetX", { Text = "Timer Offset X", Tooltip = "Nudge the timer left or right.", Default = 0, Min = -400,
-	Max = 400, Rounding = 0,
-	["Callback"] = function(Value)
-		ZombieConfig.BomberTimerOffsetX = Value
-	end
-})
-ZombieGroup:AddSlider("ZombieBomberTimerOffsetY", { Text = "Timer Offset Y", Tooltip = "Nudge the timer up or down.", Default = 0, Min = -400,
-	Max = 400, Rounding = 0,
-	["Callback"] = function(Value)
-		ZombieConfig.BomberTimerOffsetY = Value
-	end
-})
+AddCommonESP(ZombieGroup, "Zombie", ZombieConfig, "ZombieESP", "zombie", nil)
+AddFeature(ZombieGroup, "Zombie", ZombieConfig, "ZombieESP", "BomberTimer", "Bomber Timer", "Countdown before a bomber blows up.", true, "BomberTimerColor", Color3.fromRGB(255, 90, 60), "Bomber Timer Color")
+AddDropdown(ZombieGroup, "ZombieBomberTimerPosition", ZombieConfig, "BomberTimerPosition", "Timer Position", "Where the countdown sits.", { "Bottom", "Top", "Center", "Left", "Right" }, "Bottom")
+AddSlider(ZombieGroup, "ZombieBomberTimerOffsetX", ZombieConfig, "BomberTimerOffsetX", "Timer Offset X", "Nudge the timer left or right.", 0, -400, 400)
+AddSlider(ZombieGroup, "ZombieBomberTimerOffsetY", ZombieConfig, "BomberTimerOffsetY", "Timer Offset Y", "Nudge the timer up or down.", 0, -400, 400)
 ZombieGroup:AddToggle("ZombieBlastRadius", { Text = "Bomber Blast Radius",
 	Tooltip = "Draws the explosion circle while a bomber is about to blow.", Default = true,
-	["Callback"] = function(Value)
-		ZombieConfig.BlastRadius = Value
-	end
+	Callback = Bind(ZombieConfig, "BlastRadius")
 }):AddColorPicker("ZombieBlastRadiusColor", { Default = Color3.fromRGB(255, 90, 60), Title = "Blast Radius Color",
-	["Callback"] = function(Value)
-		ZombieConfig.BlastRadiusColor = Value
-	end
+	Callback = Bind(ZombieConfig, "BlastRadiusColor")
 })
-local ZombieColorsGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Zombie Colors", Side = "Left", IconName = "palette" }))
-local ShamblerRow = ZombieColorsGroup:AddLabel("Shambler")
-ShamblerRow:AddColorPicker("ZombieColorNormal", { Default = ZombieColors.Normal, Title = "Shambler Color",
-	["Callback"] = function(Value)
-		ZombieColors.Normal = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for shamblers.", nil, ShamblerRow.TextLabel)
-local RunnerRow = ZombieColorsGroup:AddLabel("Runner")
-RunnerRow:AddColorPicker("ZombieColorFast", { Default = ZombieColors.Fast, Title = "Runner Color",
-	["Callback"] = function(Value)
-		ZombieColors.Fast = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for runners.", nil, RunnerRow.TextLabel)
-local BomberRow = ZombieColorsGroup:AddLabel("Bomber")
-BomberRow:AddColorPicker("ZombieColorBarrel", { Default = ZombieColors.Barrel, Title = "Bomber Color",
-	["Callback"] = function(Value)
-		ZombieColors.Barrel = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for bombers.", nil, BomberRow.TextLabel)
-local SapperRow = ZombieColorsGroup:AddLabel("Sapper")
-SapperRow:AddColorPicker("ZombieColorSapper", { Default = ZombieColors.Sapper, Title = "Sapper Color",
-	["Callback"] = function(Value)
-		ZombieColors.Sapper = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for sappers.", nil, SapperRow.TextLabel)
-local IgniterRow = ZombieColorsGroup:AddLabel("Igniter")
-IgniterRow:AddColorPicker("ZombieColorIgniter", { Default = ZombieColors.Igniter, Title = "Igniter Color",
-	["Callback"] = function(Value)
-		ZombieColors.Igniter = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for igniters.", nil, IgniterRow.TextLabel)
-local CuirassierRow = ZombieColorsGroup:AddLabel("Cuirassier")
-CuirassierRow:AddColorPicker("ZombieColorCuirassier", { Default = ZombieColors.Cuirassier, Title = "Cuirassier Color",
-	["Callback"] = function(Value)
-		ZombieColors.Cuirassier = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for cuirassiers.", nil, CuirassierRow.TextLabel)
-local CrawlerRow = ZombieColorsGroup:AddLabel("Crawler")
-CrawlerRow:AddColorPicker("ZombieColorCrawler", { Default = ZombieColors.Crawler, Title = "Crawler Color",
-	["Callback"] = function(Value)
-		ZombieColors.Crawler = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for crawlers.", nil, CrawlerRow.TextLabel)
-local HeadlessRow = ZombieColorsGroup:AddLabel("Headless")
-HeadlessRow:AddColorPicker("ZombieColorHeadless", { Default = ZombieColors.Headless, Title = "Headless Color",
-	["Callback"] = function(Value)
-		ZombieColors.Headless = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for headless.", nil, HeadlessRow.TextLabel)
-local BigBoyRow = ZombieColorsGroup:AddLabel("Big Boy")
-BigBoyRow:AddColorPicker("ZombieColorBigBoy", { Default = ZombieColors.BigBoy, Title = "Big Boy Color",
-	["Callback"] = function(Value)
-		ZombieColors.BigBoy = Value
-	end
-})
-Library:AddTooltip("Box and chams colour for big boys.", nil, BigBoyRow.TextLabel)
-local PlayerGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Player ESP Options", Side = "Right", IconName = "users" }))
-PlayerGroup:AddToggle("PlayerBox", { Text = "Box", Tooltip = "Box around each player.", Default = true,
-	["Callback"] = function(Value)
-		PlayerConfig.Box = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerBoxColor", { Default = Color3.fromRGB(120, 200, 130), Title = "Box Color",
-	["Callback"] = function(Value)
-		PlayerConfig.BoxColor = Value
-	end
-})
-PlayerGroup:AddDropdown("PlayerBoxStyle", { Values = { "Box", "Corner", "Filled Box" }, Default = "Box", Text = "Box Style",
-	Tooltip = "Plain box, corner brackets, or a filled box.",
-	["Callback"] = function(Value)
-		PlayerConfig.BoxStyle = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerChams", { Text = "Chams", Tooltip = "Colours the player model.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Chams = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerChamsColor", { Default = Color3.fromRGB(120, 200, 130), Title = "Chams Color",
-	["Callback"] = function(Value)
-		PlayerConfig.ChamsColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerTracers", { Text = "Tracers", Tooltip = "Line from your screen to them.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Tracers = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerTracersColor", { Default = Color3.fromRGB(120, 200, 130), Title = "Tracer Color",
-	["Callback"] = function(Value)
-		PlayerConfig.TracerColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerNames", { Text = "Names", Tooltip = "Display name above the box.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Names = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerNamesColor", { Default = Color3.fromRGB(255, 255, 255), Title = "Name Color",
-	["Callback"] = function(Value)
-		PlayerConfig.NameColor = Value
-	end
-})
-PlayerGroup:AddDropdown("PlayerNameStyle", { Values = { "Text", "GUI", "Both" }, Default = "Text", Text = "Name Display",
-	Tooltip = "Text draws it, GUI is a label.",
-	["Callback"] = function(Value)
-		PlayerConfig.NameStyle = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerHealth", { Text = "Health Bar", Tooltip = "Health under the name.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Health = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerHealthColor", { Default = Color3.fromRGB(90, 200, 90), Title = "Health Color",
-	["Callback"] = function(Value)
-		PlayerConfig.HealthColor = Value
-	end
-})
-PlayerGroup:AddDropdown("PlayerHealthStyle", { Values = { "Text", "GUI", "Both" }, Default = "Text", Text = "Health Display",
-	Tooltip = "How the health is drawn.",
-	["Callback"] = function(Value)
-		PlayerConfig.HealthStyle = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerDistance", { Text = "Show Distance", Tooltip = "Distance in studs next to the name.", Default = true,
-	["Callback"] = function(Value)
-		PlayerConfig.Distance = Value
-	end
-})
+task.wait()
+local ColorsGroup = Tabs.Visuals:AddGroupbox({ Name = "Zombie Colors", Side = "Left", IconName = "palette" })
+for _, Item in { { "Normal", "Shambler" }, { "Fast", "Runner" }, { "Barrel", "Bomber" }, { "Sapper", "Sapper" },
+	{ "Igniter", "Igniter" }, { "Cuirassier", "Cuirassier" }, { "Crawler", "Crawler" },
+	{ "Headless", "Headless" }, { "BigBoy", "Big Boy" }
+} do
+	local Key, Display = Item[1], Item[2]
+	local Row = ColorsGroup:AddLabel(Display)
+	Row:AddColorPicker("ZombieColor" .. Key, { Default = ZombieColors[Key], Title = Display .. " Color", Callback = Bind(ZombieColors, Key) })
+	Library:AddTooltip("Box and chams colour for " .. Display:lower() .. (Key == "Headless" and "." or "s."), nil, Row.TextLabel)
+end
+local PlayerGroup = Tabs.Visuals:AddGroupbox({ Name = "Player ESP Options", Side = "Right", IconName = "users" })
+AddCommonESP(PlayerGroup, "Player", PlayerConfig, "PlayerESP", "player", Color3.fromRGB(120, 200, 130))
 PlayerGroup:AddDivider()
-PlayerGroup:AddToggle("PlayerInfection", { Text = "Infection", Tooltip = "Shows infection percent.", Default = true,
-	["Callback"] = function(Value)
-		PlayerConfig.Infection = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerInfectionColor", { Default = Color3.fromRGB(190, 70, 70), Title = "Infection Color",
-	["Callback"] = function(Value)
-		PlayerConfig.InfectionColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerGrabbed", { Text = "Grabbed", Tooltip = "Flags players a zombie is holding.", Default = true,
-	["Callback"] = function(Value)
-		PlayerConfig.Grabbed = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerGrabbedColor", { Default = Color3.fromRGB(255, 70, 70), Title = "Grabbed Color",
-	["Callback"] = function(Value)
-		PlayerConfig.GrabbedColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerPinned", { Text = "Pinned", Tooltip = "Shows what pinned them.", Default = true,
-	["Callback"] = function(Value)
-		PlayerConfig.Pinned = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerPinnedColor", { Default = Color3.fromRGB(255, 170, 60), Title = "Pinned Color",
-	["Callback"] = function(Value)
-		PlayerConfig.PinnedColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerBurning", { Text = "Burning", Tooltip = "Flags players on fire.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.Burning = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerBurningColor", { Default = Color3.fromRGB(255, 130, 40), Title = "Burning Color",
-	["Callback"] = function(Value)
-		PlayerConfig.BurningColor = Value
-	end
-})
-PlayerGroup:AddToggle("PlayerBrokenLegs", { Text = "Broken Legs", Tooltip = "Flags players with broken legs.", Default = false,
-	["Callback"] = function(Value)
-		PlayerConfig.BrokenLegs = Value
-		if Value then
-			EnsureEnabled("PlayerESP")
-		end
-	end
-}):AddColorPicker("PlayerBrokenLegsColor", { Default = Color3.fromRGB(180, 180, 255), Title = "Broken Legs Color",
-	["Callback"] = function(Value)
-		PlayerConfig.BrokenLegsColor = Value
-	end
-})
-local ThrowableGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Throwables", Side = "Right", IconName = "bomb" }))
+for _, Item in { { "Infection", "Infection", "Shows infection percent.", true, Color3.fromRGB(190, 70, 70) },
+	{ "Grabbed", "Grabbed", "Flags players a zombie is holding.", true, Color3.fromRGB(255, 70, 70) },
+	{ "Pinned", "Pinned", "Shows what pinned them.", true, Color3.fromRGB(255, 170, 60) },
+	{ "Burning", "Burning", "Flags players on fire.", false, Color3.fromRGB(255, 130, 40) },
+	{ "BrokenLegs", "Broken Legs", "Flags players with broken legs.", false,
+		Color3.fromRGB(180, 180, 255)
+	}
+} do
+	AddFeature(PlayerGroup, "Player", PlayerConfig, "PlayerESP", Item[1], Item[2], Item[3], Item[4], Item[1] .. "Color", Item[5], Item[2] .. " Color")
+end
+local ThrowableGroup = Tabs.Visuals:AddGroupbox({ Name = "Throwables", Side = "Right", IconName = "bomb" })
 ThrowableGroup:AddToggle("ThrowableMortarTimer", { Text = "Hand Mortar Timer", Tooltip = "Counts down the fuse on grenades you fire.", Default = false,
-	["Callback"] = function(Value)
-		ThrowableConfig.MortarTimer = Value
-	end
+	Callback = Bind(ThrowableConfig, "MortarTimer")
 })
 ThrowableGroup:AddToggle("ThrowableTrajectory", { Text = "Throwable Trajectory", Tooltip = "Shows where your grenade or tar bottle will land.",
-	Default = false,
-	["Callback"] = function(Value)
-		ThrowableConfig.Trajectory = Value
-	end
+	Default = false, Callback = Bind(ThrowableConfig, "Trajectory")
 })
-local WorldGroup = Pace(Tabs.World:AddGroupbox({ Name = "Lighting", Side = "Left", IconName = "sun" }))
+task.wait()
+local WorldGroup = Tabs.World:AddGroupbox({ Name = "Lighting", Side = "Left", IconName = "sun" })
 WorldGroup:AddToggle("WorldFullbright", { Text = "Fullbright", Tooltip = "Lights up the whole map.", Default = false,
-	["Callback"] = function(Value)
-		WorldConfig.Fullbright = Value
-		ApplyWorldLighting()
-	end
+	Callback = Bind(WorldConfig, "Fullbright", ApplyWorldLighting)
 })
 WorldGroup:AddToggle("WorldNoFog", { Text = "No Fog", Tooltip = "Clears the fog so you can see further.", Default = false,
-	["Callback"] = function(Value)
-		WorldConfig.NoFog = Value
-		ApplyWorldLighting()
-	end
+	Callback = Bind(WorldConfig, "NoFog", ApplyWorldLighting)
 })
-local AmbienceGroup = Pace(Tabs.World:AddGroupbox({ Name = "Ambience", Side = "Right", IconName = "palette" }))
+local AmbienceGroup = Tabs.World:AddGroupbox({ Name = "Ambience", Side = "Right", IconName = "palette" })
 AmbienceGroup:AddLabel("Ambient Color"):AddColorPicker("WorldAmbient", { Default = WorldOriginal.Ambient, Title = "Ambient Color",
-	["Callback"] = function(Value)
-		WorldConfig.Ambient = Value
-		ApplyWorldLighting()
-	end
+	Callback = Bind(WorldConfig, "Ambient", ApplyWorldLighting)
 })
 AmbienceGroup:AddLabel("Outdoor Ambient Color"):AddColorPicker("WorldOutdoorAmbient", { Default = WorldOriginal.OutdoorAmbient, Title = "Outdoor Ambient Color",
-	["Callback"] = function(Value)
-		WorldConfig.OutdoorAmbient = Value
-		ApplyWorldLighting()
-	end
+	Callback = Bind(WorldConfig, "OutdoorAmbient", ApplyWorldLighting)
 })
-AmbienceGroup:AddSlider("WorldBrightness", { Text = "Brightness", Tooltip = "How bright the world is.", Default = WorldOriginal.Brightness,
-	Min = 0, Max = 5, Rounding = 1,
-	["Callback"] = function(Value)
-		WorldConfig.Brightness = Value
-		ApplyWorldLighting()
-	end
-})
-local HitboxGroup = Pace(Tabs.Combat:AddGroupbox({ Name = "Hitbox Expander", Side = "Left", IconName = "expand" }))
+AddSlider(AmbienceGroup, "WorldBrightness", WorldConfig, "Brightness", "Brightness", "How bright the world is.", WorldOriginal.Brightness, 0, 5, { Rounding = 1 }, ApplyWorldLighting)
+task.wait()
+local HitboxGroup = Tabs.Combat:AddGroupbox({ Name = "Hitbox Expander", Side = "Left", IconName = "expand" })
+local function InvalidateHitboxParts()
+	HitboxPartsStamp = 0
+end
 HitboxGroup:AddToggle("HitboxExpander", { Text = "Hitbox Expander", Tooltip = "Bigger hit area on your swings.", Default = false,
-	["Callback"] = function(Value)
-		HitboxConfig.Enabled = Value
-		SyncHook()
-	end
+	Callback = Bind(HitboxConfig, "Enabled", SyncHook)
 })
-HitboxGroup:AddSlider("HitboxExpanderSize", { Text = "Hitbox Expander Size", Tooltip = "How much bigger that area is.", Default = 5, Min = 1,
-	Max = 10, Rounding = 0,
-	["Callback"] = function(Value)
-		HitboxConfig.Size = Value
-	end
-})
-HitboxGroup:AddDropdown("HitboxExpanderPart", { Values = { "All", "Head", "Torso", "Legs", "HumanoidRootPart" }, Default = "All",
-	Text = "Hitbox Part", Tooltip = "Which parts get the bigger hit area.",
-	["Callback"] = function(Value)
-		HitboxConfig.Part = Value
-		InvalidateHitboxParts()
-	end
-})
+AddSlider(HitboxGroup, "HitboxExpanderSize", HitboxConfig, "Size", "Hitbox Expander Size", "How much bigger that area is.", 5, 1, 10)
+AddDropdown(HitboxGroup, "HitboxExpanderPart", HitboxConfig, "Part", "Hitbox Part", "Which parts get the bigger hit area.", { "All", "Head", "Torso", "Legs", "HumanoidRootPart" }, "All", InvalidateHitboxParts)
 HitboxGroup:AddToggle("HitboxIgnoreBarrel", { Text = "Ignore Bombers/Barrel", Tooltip = "Skips bombers so you don't pop them.", Default = false,
-	["Callback"] = function(Value)
-		HitboxConfig.IgnoreBarrel = Value
-		InvalidateHitboxParts()
-	end
+	Callback = Bind(HitboxConfig, "IgnoreBarrel", InvalidateHitboxParts)
 })
 HitboxGroup:AddToggle("HitboxShow", { Text = "Show Hitboxes", Tooltip = "Draws the hit area so you can see it.", Default = false,
-	["Callback"] = function(Value)
-		HitboxConfig.Show = Value
-	end
+	Callback = Bind(HitboxConfig, "Show")
 })
 HitboxGroup:AddSlider("HitboxTransparency", { Text = "Hitbox Transparency", Tooltip = "How faded the hitboxes are. 90 is barely visible.",
 	Default = 90, Min = 0, Max = 100, Rounding = 0, Suffix = "%",
@@ -2296,63 +1609,29 @@ HitboxGroup:AddSlider("HitboxTransparency", { Text = "Hitbox Transparency", Tool
 		HitboxConfig.Transparency = Value / 100
 	end
 })
-local FirearmsGroup = Pace(Tabs.Combat:AddGroupbox({ Name = "Firearms", Side = "Left", IconName = "crosshair" }))
-local AssistToggle = FirearmsGroup:AddToggle("AimAssist", { Text = "Aim Assist", Tooltip = "Sways your camera onto the nearest zombie in the circle.",
-	Default = false,
-	["Callback"] = function(Value)
-		AimConfig.Assist.Enabled = Value
-	end
-})
-AssistToggle:AddKeyPicker("AimAssistKey", { Text = "Aim Assist key", Default = "None", Mode = "Hold" })
+local FirearmsGroup = Tabs.Combat:AddGroupbox({ Name = "Firearms", Side = "Left", IconName = "crosshair" })
+FirearmsGroup:AddToggle("AimAssist", { Text = "Aim Assist", Tooltip = "Sways your camera onto the nearest zombie in the circle.",
+	Default = false, Callback = Bind(AimConfig, "Enabled")
+}):AddKeyPicker("AimAssistKey", { Text = "Aim Assist key", Default = "None", Mode = "Hold" })
 AssistPicker = Options.AimAssistKey
 FirearmsGroup:AddDropdown("AimAssistTypes", { Values = ZombieTypeValues, Default = { "All" }, Text = "Aim Assist Types",
-	Tooltip = "Which zombies aim assist goes for.", Multi = true,
-	["Callback"] = function(Value)
-		local Types = {}
-		for Key in Value do
-			Types[Key] = true
-		end
-		AimConfig.Assist.Types = Types
-	end
+	Tooltip = "Which zombies aim assist goes for.", Multi = true, Callback = TypesCallback(AimConfig)
 })
-FirearmsGroup:AddSlider("AimAssistFOV", { Text = "Aim Assist FOV", Tooltip = "How far from your crosshair it will look.", Default = 40,
-	Min = 5, Max = 180, Rounding = 0,
-	["Callback"] = function(Value)
-		AimConfig.Assist.FOV = Value
-	end
-})
+AddSlider(FirearmsGroup, "AimAssistFOV", AimConfig, "FOV", "Aim Assist FOV", "How far from your crosshair it will look.", 40, 5, 180)
 FirearmsGroup:AddToggle("AimAssistShowFOV", { Text = "Show Aim Assist FOV", Tooltip = "Draws the aim assist circle.", Default = false,
-	["Callback"] = function(Value)
-		AimConfig.Assist.ShowFOV = Value
-	end
+	Callback = Bind(AimConfig, "ShowFOV")
 })
-local MeleeGroup = Pace(Tabs.Combat:AddGroupbox({ Name = "Melee", Side = "Right", IconName = "target" }))
+local MeleeGroup = Tabs.Combat:AddGroupbox({ Name = "Melee", Side = "Right", IconName = "target" })
 MeleeGroup:AddToggle("MeleeAutoHeadshot", { Text = "Auto Headshot", Tooltip = "Turns your hits into headshots.", Default = false,
-	["Callback"] = function(Value)
-		MeleeConfig.AutoHeadshot = Value
-		SyncHook()
-	end
+	Callback = Bind(MeleeConfig, "AutoHeadshot", SyncHook)
 })
-MeleeGroup:AddSlider("MeleeHeadshotChance", { Text = "Headshot Chance", Tooltip = "Odds a hit lands as a headshot.", Default = 100, Min = 0,
-	Max = 100, Rounding = 0, Suffix = "%",
-	["Callback"] = function(Value)
-		MeleeConfig.Chance = Value
-	end
-})
+AddSlider(MeleeGroup, "MeleeHeadshotChance", MeleeConfig, "Chance", "Headshot Chance", "Odds a hit lands as a headshot.", 100, 0, 100, { Suffix = "%" })
 MeleeGroup:AddToggle("MeleeSwingSpeedEnabled", { Text = "Swing Speed", Tooltip = "Turns the multiplier below on.", Default = false,
-	["Callback"] = function(Value)
-		MeleeConfig.SwingSpeedEnabled = Value
-		ApplySwingSpeed()
-	end
+	Callback = Bind(MeleeConfig, "SwingSpeedEnabled", ApplySwingSpeed)
 })
-MeleeGroup:AddSlider("MeleeSwingSpeed", { Text = "Swing Speed Multiplier", Tooltip = "How many times faster you swing.", Default = 1, Min = 1,
-	Max = 5, Rounding = 1, Suffix = "x",
-	["Callback"] = function(Value)
-		MeleeConfig.SwingSpeed = Value
-		ApplySwingSpeed()
-	end
-})
-local MenuGroup = Pace(Tabs.Settings:AddGroupbox({ Side = "Left", Name = "Menu", IconName = "wrench" }))
+AddSlider(MeleeGroup, "MeleeSwingSpeed", MeleeConfig, "SwingSpeed", "Swing Speed Multiplier", "How many times faster you swing.", 1, 1, 5, { Rounding = 1, Suffix = "x" }, ApplySwingSpeed)
+task.wait()
+local MenuGroup = Tabs.Settings:AddGroupbox({ Side = "Left", Name = "Menu", IconName = "wrench" })
 MenuGroup:AddToggle("KeybindMenuOpen", { Default = Library.KeybindFrame.Visible, Text = "Open Keybind Menu",
 	Tooltip = "Shows the keybind list on screen.",
 	["Callback"] = function(Value)
@@ -2384,9 +1663,7 @@ MenuGroup:AddDropdown("NotificationSide", { Values = { "Left", "Right" }, Defaul
 MenuGroup:AddDropdown("DPIDropdown", { Values = { "50%", "75%", "100%", "125%", "150%", "175%", "200%" }, Default = "100%",
 	Text = "DPI Scale", Tooltip = "Scales the whole menu.",
 	["Callback"] = function(Value)
-		Value = Value:gsub("%%", "")
-		local DPI = tonumber(Value)
-		Library:SetDPIScale(DPI)
+		Library:SetDPIScale(tonumber((Value:gsub("%%", ""))))
 	end
 })
 MenuGroup:AddSlider("UICornerSlider", { Text = "Corner Radius", Tooltip = "How round the menu corners are.", Default = Library.CornerRadius,
@@ -2397,22 +1674,21 @@ MenuGroup:AddSlider("UICornerSlider", { Text = "Corner Radius", Tooltip = "How r
 })
 MenuGroup:AddDivider()
 MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
-MenuGroup:AddButton({ Text = "Unload",
+MenuGroup:AddButton({ Text = "Unload", Tooltip = "Closes the menu and undoes everything.",
 	["Func"] = function()
 		Library:Unload()
-	end,
-	 Tooltip = "Closes the menu and undoes everything."
+	end
 })
 Library.ToggleKeybind = Options.MenuKeybind
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 SaveManager:SetFolder("Umber/Default")
-Breathe()
 SaveManager:BuildConfigSection(Tabs.Settings)
-Breathe()
 ThemeManager:ApplyToTab(Tabs.Settings)
-Breathe()
 LoadingConfig = true
-SaveManager:LoadAutoloadConfig()
+local ConfigOk, ConfigErr = pcall(SaveManager.LoadAutoloadConfig, SaveManager)
 LoadingConfig = false
+if not ConfigOk then
+	warn("Umber: autoload config failed: " .. tostring(ConfigErr))
+end
