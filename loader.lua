@@ -1,4 +1,4 @@
-local Games = { 
+local Games = {
     [4342047058] = "https://raw.githubusercontent.com/nathanathan69420-pixel/Umber/refs/heads/main/gnb.lua"
 }
 local function Notify(title, text, duration)
@@ -19,7 +19,7 @@ if not ScriptUrl then
 end
 task.spawn(function()
     local Success, Source = pcall(function()
-        return game:HttpGet(ScriptUrl)
+        return game:HttpGet(ScriptUrl .. "?v=" .. tostring(tick()))
     end)
     local _sc_s1 = not Success or type(Source) ~= "string"
     if _sc_s1 or #Source == 0 then
