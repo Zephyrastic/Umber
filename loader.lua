@@ -122,7 +122,7 @@ local _RunService = game.RunService
 local _Lighting = game.Lighting
 local _Stats = game.Stats
 local _LocalPlayer = Players.LocalPlayer
-local Window = Library:CreateWindow({ Title = "Umber", Footer = "v0.2.1", NotifySide = "Right", Font = Enum.Font.Gotham })
+local Window = Library:CreateWindow({ Title = "Umber", Footer = "v0.2", NotifySide = "Right", Font = Enum.Font.Gotham })
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder("Umber")
 ThemeManager:SetDefaultTheme({ FontFace = "Gotham", FontColor = "ffffff", MainColor = "4d3b27", AccentColor = "a45b26",
@@ -130,7 +130,8 @@ ThemeManager:SetDefaultTheme({ FontFace = "Gotham", FontColor = "ffffff", MainCo
 })
 local Tabs = { Main = Window:AddTab("Main", "home"), Player = Window:AddTab("Player", "user"),
 	Visuals = Window:AddTab("Visuals", "eye"), World = Window:AddTab("World", "sun"),
-	Combat = Window:AddTab("Combat", "swords"), Settings = Window:AddTab("Settings", "settings")
+	Combat = Window:AddTab("Combat", "swords"), Class = Window:AddTab("Class Features", "hammer"),
+	Settings = Window:AddTab("Settings", "settings")
 }
 local Greetings = { "Welcome to Umber, %s", "Greetings, %s", "Good to see you, %s", "Umber is ready, %s",
 	"Back again, %s?"
@@ -223,6 +224,9 @@ end)
 local HitboxConfig = { Enabled = false, Size = 5, Part = "All", IgnoreBarrel = false, Show = false, Transparency = 0.9 }
 local MeleeConfig = { AutoHeadshot = false, Chance = 100, SwingSpeed = 1, SwingSpeedEnabled = false }
 local LegitConfig = { AutoJump = false }
+local ClassConfig = { AutoBuild = false, BuildPriority = "Closest Building", ShoveExpander = false, ShoveRadius = 5,
+	ShoveShow = false, ShoveTransparency = 95
+}
 local ThrowableConfig = { Timer = false, MortarTimer = false, Trajectory = false }
 local AimConfig = { 
 	Silent = { Enabled = false,
@@ -535,11 +539,11 @@ local function ProjectModel(Model, Camera)
 	local Visible = false
 	local AllFront = true
 	for Index = 0, 7 do
-		local _t1520 = Index % 2
+		local _t1538 = Index % 2
 		local _sc12 = math.floor(Index / 2) % 2 == 0 and 0.5 or -0.5
 		local _sc13 = Index < 4 and 0.5 or -0.5
 		local World = BoxCFrame
-			* Vector3.new(BoxSize.X * (_t1520 == 0 and 0.5 or -0.5), BoxSize.Y * _sc12, BoxSize.Z * _sc13)
+			* Vector3.new(BoxSize.X * (_t1538 == 0 and 0.5 or -0.5), BoxSize.Y * _sc12, BoxSize.Z * _sc13)
 		local Point = Camera:WorldToViewportPoint(World)
 		ProjectCorners[Index + 1] = World
 		ProjectDepth[Index + 1] = Point.Z
@@ -1713,23 +1717,57 @@ local function InstallHitboxHook()
 				end
 				return Previous(Self, ...)
 			end
-			if Self ~= workspace or Method ~= "Raycast" then
+			if Self ~= workspace then
+				return Previous(Self, ...)
+			end
+			if Method == "GetPartBoundsInRadius" then
+				if ClassConfig.ShoveExpander then
+					local Args = table.pack(...)
+					local Params = Args[3]
+					local OkType, FilterType = pcall(function()
+						return Params.FilterType
+					end)
+					if OkType and FilterType == Enum.RaycastFilterType.Include then
+						local OkFirst, First = pcall(function()
+							return Params.FilterDescendantsInstances[1]
+						end)
+						local OkCam, Camera = pcall(function()
+							return workspace.CurrentCamera
+						end)
+						local Radius = Args[2]
+						if OkFirst
+							and OkCam
+							and rawequal(First, Camera)
+							and typeof(Radius) == "number"
+							and Radius <= 5
+							and Radius < ClassConfig.ShoveRadius
+						then
+							Args[2] = ClassConfig.ShoveRadius
+							return Previous(Self, table.unpack(Args, 1, Args.n))
+						end
+					end
+				end
+				return Previous(Self, ...)
+			end
+			if Method ~= "Raycast" then
 				return Previous(Self, ...)
 			end
 			if typeof(checkcaller) == "function" and checkcaller() then
 				return Previous(Self, ...)
 			end
-			local Origin, Direction, Params = ...
-			local Built = Previous(Self, ...)
-			local Ok = true
-			local Resolved = Built
-			if typeof(Params) == "RaycastParams" and Params.CollisionGroup == "Raycast" then
-				Ok, Resolved = pcall(ProcessMeleeRay, Origin, Direction, Params, Built)
+			do
+				local Origin, Direction, Params = ...
+				local Built = Previous(Self, ...)
+				local Ok = true
+				local Resolved = Built
+				if typeof(Params) == "RaycastParams" and Params.CollisionGroup == "Raycast" then
+					Ok, Resolved = pcall(ProcessMeleeRay, Origin, Direction, Params, Built)
+				end
+				if Ok and Resolved then
+					return Resolved
+				end
+				return Built
 			end
-			if Ok and Resolved then
-				return Resolved
-			end
-			return Built
 		end)
 	end)
 	if Success and typeof(Result) == "function" then
@@ -1748,7 +1786,8 @@ local function RemoveHitboxHook()
 end
 local function SyncHook()
 	local _sc11_s1 = HitboxConfig.Enabled or MeleeConfig.AutoHeadshot
-	if _sc11_s1 or AimConfig.Silent.Enabled then
+	local _sc11_s2 = _sc11_s1 or AimConfig.Silent.Enabled
+	if _sc11_s2 or ClassConfig.ShoveExpander then
 		InstallHitboxHook()
 	else
 		RemoveHitboxHook()
@@ -2120,6 +2159,7 @@ do
 		Track(Folder.ChildAdded:Connect(TrackProjectile))
 		Track(Folder.ChildRemoved:Connect(UntrackProjectile))
 	end)
+	local ShoveSphere
 	local function Cleanup()
 		Unloaded = true
 		SendUserCount("left")
@@ -2158,6 +2198,12 @@ do
 			end)
 		end
 		table.clear(FOVCircles)
+		if ShoveSphere then
+			pcall(function()
+				ShoveSphere:Destroy()
+			end)
+			ShoveSphere = nil
+		end
 		RestoreWorldLighting()
 		if TrajectoryLines then
 			for _, Line in TrajectoryLines do
@@ -2263,6 +2309,156 @@ do
 	end
 	Track(_LocalPlayer.CharacterAdded:Connect(BindCharacter))
 	BindCharacter()
+	local LastAutoBuild = 0
+	local function UpdateAutoBuild()
+		if not ClassConfig.AutoBuild or Unloaded then
+			return
+		end
+		local Now = tick()
+		if Now - LastAutoBuild < 0.5 then
+			return
+		end
+		LastAutoBuild = Now
+		local Character = _LocalPlayer.Character
+		local _sc11 = Character and Character:FindFirstChild("HumanoidRootPart")
+		local Root = _sc11
+		if not _sc11 then
+			return
+		end
+		local Backpack = _LocalPlayer:FindFirstChild("Backpack")
+		local _sc12 = Backpack and Backpack:FindFirstChild("Hammer") or Character:FindFirstChild("Hammer")
+		local Hammer = _sc12
+		if not _sc12 then
+			return
+		end
+		local Remote = Hammer:FindFirstChild("RemoteEvent")
+		if not Remote then
+			return
+		end
+		local Container = workspace:FindFirstChild("Buildings")
+		if not Container then
+			return
+		end
+		local RootPos = Root.Position
+		local Best
+		local BestKey = math.huge
+		for _, Health in ipairs(Container:GetDescendants()) do
+			if not (Health.Name == "BuildingHealth" or Health.Name == "ConstructHealth") then
+				continue
+			end
+			local Building = Health.Parent
+			if not Building then
+				continue
+			end
+			local Hitbox = Building:FindFirstChild("Hitbox")
+			local Anchor = Hitbox or Building
+			local Ok, Pos = pcall(function()
+				if Anchor:IsA("BasePart") then
+					return Anchor.Position
+				end
+				return Anchor:GetPivot().Position
+			end)
+			if Ok and Pos then
+				local Distance = (Pos - RootPos).Magnitude
+				if Distance <= 15 then
+					local Key = Distance
+					if ClassConfig.BuildPriority == "Lowest Health Building" then
+						local OkValue, Value = pcall(function()
+							return Health.Value
+						end)
+						local OkMax, Max = pcall(function()
+							return Health:GetAttribute("MaxHealth")
+						end)
+						if OkValue and typeof(Value) == "number" and OkMax and typeof(Max) == "number" and Max > 0 then
+							if Value >= Max then
+								continue
+							end
+							Key = Value / Max
+						end
+					end
+					if Key < BestKey then
+						BestKey = Key
+						Best = Health
+					end
+				end
+			end
+		end
+		if Best then
+			Remote:FireServer("Repair", Best)
+		end
+	end
+	local function EnsureShoveSphere(Camera)
+		if ShoveSphere and ShoveSphere.Parent == Camera then
+			return ShoveSphere
+		end
+		if ShoveSphere then
+			pcall(function()
+				ShoveSphere:Destroy()
+			end)
+			ShoveSphere = nil
+		end
+		local Part = Instance.new("Part")
+		Part.Name = "UmberShoveHitbox"
+		Part.Shape = Enum.PartType.Ball
+		Part.Material = Enum.Material.ForceField
+		Part.Color = Color3.fromRGB(255, 90, 90)
+		Part.Anchored = true
+		Part.CanCollide = false
+		Part.CanQuery = false
+		Part.CanTouch = false
+		Part.CastShadow = false
+		Part.Transparency = math.clamp(ClassConfig.ShoveTransparency / 100, 0.01, 1)
+		Part.Parent = Camera
+		ShoveSphere = Part
+		return Part
+	end
+	local function HideShoveSphere()
+		if ShoveSphere then
+			Set(ShoveSphere, "CFrame", CFrame.new(0, -500, 0))
+		end
+	end
+	local function UpdateShoveVisual()
+		if not ClassConfig.ShoveShow or Unloaded then
+			HideShoveSphere()
+			return
+		end
+		local Character = _LocalPlayer.Character
+		local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+		local _sc12 = Character and Character:FindFirstChildOfClass("Tool")
+		local Tool = _sc12
+		local CanShove = false
+		local Stock = 3
+		if _sc12 then
+			local Configuration = Tool:FindFirstChild("Configuration")
+			if Configuration then
+				local Ok, Value = pcall(function()
+					return Configuration:GetAttribute("CanShove")
+				end)
+				if Ok and Value then
+					CanShove = true
+					local OkRadius, Radius = pcall(function()
+						return Configuration:GetAttribute("ShoveHitboxRadius")
+					end)
+					if OkRadius and typeof(Radius) == "number" then
+						Stock = Radius
+					end
+				end
+			end
+		end
+		local Camera = workspace.CurrentCamera
+		if not CanShove or not Root or not Camera then
+			HideShoveSphere()
+			return
+		end
+		local Radius = ClassConfig.ShoveExpander and math.max(Stock, ClassConfig.ShoveRadius) or Stock
+		local Sphere = EnsureShoveSphere(Camera)
+		if not Sphere then
+			return
+		end
+		Set(Sphere, "Transparency", math.clamp(ClassConfig.ShoveTransparency / 100, 0.01, 1))
+		Set(Sphere, "Size", Vector3.new(Radius * 2, Radius * 2, Radius * 2))
+		Set(Sphere, "CFrame", CFrame.new(Root.Position + Root.CFrame.LookVector * 2))
+	end
 	local function UpdateFrame()
 		UpdateESP()
 		UpdateHitboxVisuals()
@@ -2270,6 +2466,8 @@ do
 		UpdateBlastRings()
 		GuardWorldFog()
 		UpdateSilentAim()
+		UpdateAutoBuild()
+		UpdateShoveVisual()
 	end
 	Track(_RunService.RenderStepped:Connect(UpdateFrame))
 	Track(_RunService.Heartbeat:Connect(SpoofGrabPosition))
@@ -2814,6 +3012,47 @@ do
 		Tooltip = "Jumps with the game jump power whenever you swing your melee weapon.", Default = false,
 		["Callback"] = function(Value)
 			LegitConfig.AutoJump = Value
+		end
+	})
+end
+do
+	local SapperGroup = Pace(Tabs.Class:AddGroupbox({ Name = "Sapper", Side = "Left", IconName = "hammer" }))
+	SapperGroup:AddToggle("AutoBuild", { Text = "Auto Build", Tooltip = "Automatically repairs damaged sapper buildings near you.",
+		Default = false,
+		["Callback"] = function(Value)
+			ClassConfig.AutoBuild = Value
+		end
+	})
+	SapperGroup:AddDropdown("AutoBuildPriority", { Values = { "Closest Building", "Lowest Health Building" }, Default = "Closest Building",
+		Text = "Priority", Tooltip = "Which damaged building gets repaired first.",
+		["Callback"] = function(Value)
+			ClassConfig.BuildPriority = Value
+		end
+	})
+	SapperGroup:AddDivider()
+	SapperGroup:AddToggle("ShoveExpander", { Text = "Shove Hitbox Expander", Tooltip = "Makes the shove hit area bigger.", Default = false,
+		["Callback"] = function(Value)
+			ClassConfig.ShoveExpander = Value
+			SyncHook()
+		end
+	})
+	SapperGroup:AddSlider("ShoveRadius", { AllowRightClickInput = true, Text = "Shove Hitbox Size", Tooltip = "How far the shove can reach.",
+		Default = 5, Min = 1, Max = 30, Rounding = 0, Suffix = "st",
+		["Callback"] = function(Value)
+			ClassConfig.ShoveRadius = Value
+		end
+	})
+	SapperGroup:AddToggle("ShoveShow", { Text = "Show Shove Hitbox", Tooltip = "Draws the shove hit area so you can see it.",
+		Default = false,
+		["Callback"] = function(Value)
+			ClassConfig.ShoveShow = Value
+		end
+	})
+	SapperGroup:AddSlider("ShoveTransparency", { AllowRightClickInput = true, Text = "Shove Hitbox Transparency",
+		Tooltip = "How faded the hitbox is. 90 is barely visible.", Default = 95, Min = 0, Max = 100,
+		Rounding = 0, Suffix = "%",
+		["Callback"] = function(Value)
+			ClassConfig.ShoveTransparency = Value
 		end
 	})
 end
