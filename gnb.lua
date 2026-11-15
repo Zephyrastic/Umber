@@ -961,7 +961,7 @@ local function SuppressHighlights(Entry, Model, Ours)
     end
 
     for _, Child in Model:GetChildren() do
-        if Child:IsA('Highlight') and Child ~= Ours then
+        if Child:IsA('Highlight') and Child ~= Ours and Child.Name ~= 'UmberTargetChams' then
             if Entry.Suppressed[Child] == nil then
                 Entry.Suppressed[Child] = Child.Enabled
             end
@@ -2154,7 +2154,7 @@ local function SampleSilentTarget()
     local Velocity = Root and Root.AssemblyLinearVelocity or Vector3.zero
 
     SilentTargetPosition = Target.Position + Velocity * (CachedPing * 0.5)
-    SilentTargetModel = Target.Model.Parent and Target.Model or nil
+    SilentTargetModel = Target.Model.Parent and GetVisual(Target.Model) or nil
 end
 
 local function EnsureFOVCircle(Name)
@@ -2216,6 +2216,7 @@ local function UpdateSilentAim()
     if AimConfig.Silent.Enabled and AimConfig.Silent.Chams and SilentTargetModel and SilentTargetModel.Parent then
         if not TargetChams then
             TargetChams = Instance.new('Highlight')
+            TargetChams.Name = 'UmberTargetChams'
             TargetChams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         end
 
