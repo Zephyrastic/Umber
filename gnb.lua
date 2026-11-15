@@ -342,12 +342,25 @@ local ZombieConfig = { Enabled = false, Types = { All = true }, Box = true, BoxS
 	BomberTimerOffsetX = 0, BomberTimerOffsetY = 0, BlastRadius = true,
 	BlastRadiusColor = Color3.fromRGB(255, 90, 60)
 }
-local ZombieColors = { Normal = Color3.fromRGB(120, 220, 120), Fast = Color3.fromRGB(80, 190, 255),
-	Barrel = Color3.fromRGB(255, 130, 60), Sapper = Color3.fromRGB(255, 220, 90),
-	Igniter = Color3.fromRGB(200, 110, 255), Cuirassier = Color3.fromRGB(100, 230, 200),
-	Crawler = Color3.fromRGB(255, 120, 200), Headless = Color3.fromRGB(235, 235, 235),
-	BigBoy = Color3.fromRGB(255, 70, 70)
+
+local ZombieKinds = {
+	{ Key = "Normal", Name = "Shambler", Color = Color3.fromRGB(120, 220, 120) },
+	{ Key = "Fast", Name = "Runner", Color = Color3.fromRGB(80, 190, 255) },
+	{ Key = "Barrel", Name = "Bomber", Color = Color3.fromRGB(255, 130, 60) },
+	{ Key = "Sapper", Name = "Sapper", Color = Color3.fromRGB(255, 220, 90) },
+	{ Key = "Igniter", Name = "Igniter", Color = Color3.fromRGB(200, 110, 255) },
+	{ Key = "Cuirassier", Name = "Cuirassier", Color = Color3.fromRGB(100, 230, 200) },
+	{ Key = "Crawler", Name = "Crawler", Color = Color3.fromRGB(255, 120, 200) },
+	{ Key = "Headless", Name = "Headless", Color = Color3.fromRGB(235, 235, 235) },
+	{ Key = "BigBoy", Name = "Big Boy", Color = Color3.fromRGB(255, 70, 70) },
 }
+local ZombieNames, ZombieColors, ZombieTypeValues = {}, {}, { "All" }
+for _, Kind in ZombieKinds do
+	ZombieNames[Kind.Key] = Kind.Name
+	ZombieColors[Kind.Key] = Kind.Color
+	table.insert(ZombieTypeValues, Kind.Name)
+end
+
 local PlayerConfig = { Enabled = false, Box = true, BoxColor = Color3.fromRGB(120, 200, 130), Chams = false,
 	ChamsColor = Color3.fromRGB(120, 200, 130), Tracers = false,
 	TracerColor = Color3.fromRGB(120, 200, 130), Names = false,
@@ -359,18 +372,7 @@ local PlayerConfig = { Enabled = false, Box = true, BoxColor = Color3.fromRGB(12
 	BurningColor = Color3.fromRGB(255, 130, 40), BrokenLegs = false,
 	BrokenLegsColor = Color3.fromRGB(180, 180, 255), BoxStyle = "Box"
 }
-local ZombieNames = { Normal = "Shambler", Fast = "Runner", Barrel = "Bomber", Sapper = "Sapper", Igniter = "Igniter",
-	Cuirassier = "Cuirassier", Crawler = "Crawler", Headless = "Headless", BigBoy = "Big Boy"
-}
-local ZombieTypeValues = { "All", "Shambler", "Runner", "Bomber", "Sapper", "Igniter", "Cuirassier", "Crawler", "Headless",
-	"Big Boy"
-}
-local SilentTypeNames = { Normal = "Shambler", Fast = "Runner", Barrel = "Bomber", Sapper = "Sapper", Igniter = "Igniter",
-	Cuirassier = "Cuirassier", Crawler = "Crawler", Headless = "Headless", BigBoy = "Big Boy"
-}
-local SilentTypeValues = { "All", "Shambler", "Runner", "Bomber", "Sapper", "Igniter", "Cuirassier", "Crawler", "Headless",
-	"Big Boy"
-}
+
 local HitboxPartNames = { Head = { Head = true }, Torso = { Torso = true },
 	Legs = { ["Left Leg"] = true, ["Right Leg"] = true }, HumanoidRootPart = { HumanoidRootPart = true }
 }
@@ -1494,7 +1496,7 @@ local function IsAimType(Config, Model)
 		return true
 	end
 	local Type = Model:GetAttribute("Type")
-	local _sc11 = Type and SilentTypeNames[Type] or Model.Name
+	local _sc11 = Type and ZombieNames[Type] or Model.Name
 	return Config.Types[_sc11] == true
 end
 local function GetAimPart(Model)
@@ -2428,69 +2430,17 @@ do
 end
 do
 	local ZombieColorsGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Zombie Colors", Side = "Left", IconName = "palette" }))
-	local ShamblerRow = ZombieColorsGroup:AddLabel("Shambler")
-	ShamblerRow:AddColorPicker("ZombieColorNormal", { Default = ZombieColors.Normal, Title = "Shambler Color",
-		["Callback"] = function(Value)
-			ZombieColors.Normal = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for shamblers.", nil, ShamblerRow.TextLabel)
-	local RunnerRow = ZombieColorsGroup:AddLabel("Runner")
-	RunnerRow:AddColorPicker("ZombieColorFast", { Default = ZombieColors.Fast, Title = "Runner Color",
-		["Callback"] = function(Value)
-			ZombieColors.Fast = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for runners.", nil, RunnerRow.TextLabel)
-	local BomberRow = ZombieColorsGroup:AddLabel("Bomber")
-	BomberRow:AddColorPicker("ZombieColorBarrel", { Default = ZombieColors.Barrel, Title = "Bomber Color",
-		["Callback"] = function(Value)
-			ZombieColors.Barrel = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for bombers.", nil, BomberRow.TextLabel)
-	local SapperRow = ZombieColorsGroup:AddLabel("Sapper")
-	SapperRow:AddColorPicker("ZombieColorSapper", { Default = ZombieColors.Sapper, Title = "Sapper Color",
-		["Callback"] = function(Value)
-			ZombieColors.Sapper = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for sappers.", nil, SapperRow.TextLabel)
-	local IgniterRow = ZombieColorsGroup:AddLabel("Igniter")
-	IgniterRow:AddColorPicker("ZombieColorIgniter", { Default = ZombieColors.Igniter, Title = "Igniter Color",
-		["Callback"] = function(Value)
-			ZombieColors.Igniter = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for igniters.", nil, IgniterRow.TextLabel)
-	local CuirassierRow = ZombieColorsGroup:AddLabel("Cuirassier")
-	CuirassierRow:AddColorPicker("ZombieColorCuirassier", { Default = ZombieColors.Cuirassier, Title = "Cuirassier Color",
-		["Callback"] = function(Value)
-			ZombieColors.Cuirassier = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for cuirassiers.", nil, CuirassierRow.TextLabel)
-	local CrawlerRow = ZombieColorsGroup:AddLabel("Crawler")
-	CrawlerRow:AddColorPicker("ZombieColorCrawler", { Default = ZombieColors.Crawler, Title = "Crawler Color",
-		["Callback"] = function(Value)
-			ZombieColors.Crawler = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for crawlers.", nil, CrawlerRow.TextLabel)
-	local HeadlessRow = ZombieColorsGroup:AddLabel("Headless")
-	HeadlessRow:AddColorPicker("ZombieColorHeadless", { Default = ZombieColors.Headless, Title = "Headless Color",
-		["Callback"] = function(Value)
-			ZombieColors.Headless = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for headless.", nil, HeadlessRow.TextLabel)
-	local BigBoyRow = ZombieColorsGroup:AddLabel("Big Boy")
-	BigBoyRow:AddColorPicker("ZombieColorBigBoy", { Default = ZombieColors.BigBoy, Title = "Big Boy Color",
-		["Callback"] = function(Value)
-			ZombieColors.BigBoy = Value
-		end
-	})
-	Library:AddTooltip("Box and chams colour for big boys.", nil, BigBoyRow.TextLabel)
+	for _, Kind in ZombieKinds do
+		local Row = ZombieColorsGroup:AddLabel(Kind.Name)
+
+		Row:AddColorPicker("ZombieColor" .. Kind.Key, { Default = Kind.Color, Title = Kind.Name .. " Color",
+			["Callback"] = function (Value)
+				ZombieColors[Kind.Key] = Value
+			end
+		})
+
+		Library:AddTooltip("Box and chams colour for " .. Kind.Name .. " zombies.", nil, Row.TextLabel)
+	end
 end
 do
 	local PlayerGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Player ESP Options", Side = "Right", IconName = "users" }))
@@ -2578,66 +2528,28 @@ do
 		end
 	})
 	PlayerGroup:AddDivider()
-	PlayerGroup:AddToggle("PlayerInfection", { Text = "Infection", Tooltip = "Shows infection percent.", Default = true,
-		["Callback"] = function(Value)
-			PlayerConfig.Infection = Value
-			if Value then
-				EnsureEnabled("PlayerESP")
+	local PlayerStatuses = {
+		{ Key = "Infection", Text = "Infection", Tooltip = "Shows infection percent.", Default = true },
+		{ Key = "Grabbed", Text = "Grabbed", Tooltip = "Flags players a zombie is holding.", Default = true },
+		{ Key = "Pinned", Text = "Pinned", Tooltip = "Shows what pinned them.", Default = true },
+		{ Key = "Burning", Text = "Burning", Tooltip = "Flags players on fire.", Default = false },
+		{ Key = "BrokenLegs", Text = "Broken Legs", Tooltip = "Flags players with broken legs.", Default = false },
+	}
+
+	for _, Status in PlayerStatuses do
+		PlayerGroup:AddToggle("Player" .. Status.Key, { Text = Status.Text, Tooltip = Status.Tooltip, Default = Status.Default,
+			["Callback"] = function (Value)
+				PlayerConfig[Status.Key] = Value
+				if Value then
+					EnsureEnabled("PlayerESP")
+				end
 			end
-		end
-	}):AddColorPicker("PlayerInfectionColor", { Default = Color3.fromRGB(190, 70, 70), Title = "Infection Color",
-		["Callback"] = function(Value)
-			PlayerConfig.InfectionColor = Value
-		end
-	})
-	PlayerGroup:AddToggle("PlayerGrabbed", { Text = "Grabbed", Tooltip = "Flags players a zombie is holding.", Default = true,
-		["Callback"] = function(Value)
-			PlayerConfig.Grabbed = Value
-			if Value then
-				EnsureEnabled("PlayerESP")
+		}):AddColorPicker("Player" .. Status.Key .. "Color", { Default = PlayerConfig[Status.Key .. "Color"], Title = Status.Text .. " Color",
+			["Callback"] = function (Value)
+				PlayerConfig[Status.Key .. "Color"] = Value
 			end
-		end
-	}):AddColorPicker("PlayerGrabbedColor", { Default = Color3.fromRGB(255, 70, 70), Title = "Grabbed Color",
-		["Callback"] = function(Value)
-			PlayerConfig.GrabbedColor = Value
-		end
-	})
-	PlayerGroup:AddToggle("PlayerPinned", { Text = "Pinned", Tooltip = "Shows what pinned them.", Default = true,
-		["Callback"] = function(Value)
-			PlayerConfig.Pinned = Value
-			if Value then
-				EnsureEnabled("PlayerESP")
-			end
-		end
-	}):AddColorPicker("PlayerPinnedColor", { Default = Color3.fromRGB(255, 170, 60), Title = "Pinned Color",
-		["Callback"] = function(Value)
-			PlayerConfig.PinnedColor = Value
-		end
-	})
-	PlayerGroup:AddToggle("PlayerBurning", { Text = "Burning", Tooltip = "Flags players on fire.", Default = false,
-		["Callback"] = function(Value)
-			PlayerConfig.Burning = Value
-			if Value then
-				EnsureEnabled("PlayerESP")
-			end
-		end
-	}):AddColorPicker("PlayerBurningColor", { Default = Color3.fromRGB(255, 130, 40), Title = "Burning Color",
-		["Callback"] = function(Value)
-			PlayerConfig.BurningColor = Value
-		end
-	})
-	PlayerGroup:AddToggle("PlayerBrokenLegs", { Text = "Broken Legs", Tooltip = "Flags players with broken legs.", Default = false,
-		["Callback"] = function(Value)
-			PlayerConfig.BrokenLegs = Value
-			if Value then
-				EnsureEnabled("PlayerESP")
-			end
-		end
-	}):AddColorPicker("PlayerBrokenLegsColor", { Default = Color3.fromRGB(180, 180, 255), Title = "Broken Legs Color",
-		["Callback"] = function(Value)
-			PlayerConfig.BrokenLegsColor = Value
-		end
-	})
+		})
+	end
 end
 do
 	local ThrowableGroup = Pace(Tabs.Visuals:AddGroupbox({ Name = "Throwables", Side = "Right", IconName = "bomb" }))
@@ -2742,7 +2654,7 @@ do
 			AimConfig.Silent.FOV = Value
 		end
 	})
-	FirearmsGroup:AddDropdown("SilentAimTypes", { Values = SilentTypeValues, Default = SilentTypeValues, Text = "Zombie Types",
+	FirearmsGroup:AddDropdown("SilentAimTypes", { Values = ZombieTypeValues, Default = ZombieTypeValues, Text = "Zombie Types",
 		Tooltip = "Which zombies silent aim goes for. All targets every zombie.", Multi = true,
 		["Callback"] = function(Value)
 			local Types = {}
