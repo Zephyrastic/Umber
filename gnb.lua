@@ -948,7 +948,8 @@ local function RenderModel(Model, Kind, Seen, View)
 	else
 		Label = if Cached and Cached.Kind == Kind and Cached.ZLabel and View.Now - Cached.SlowAt < 1 then Cached.ZLabel else GetPlayerLabel(Model)
 	end
-	local MinX, MinY, MaxX, MaxY = ProjectModel(Model, View.Camera)
+	local Subject = if Kind == "zombie" then GetVisual(Model) else Model
+	local MinX, MinY, MaxX, MaxY = ProjectModel(Subject, View.Camera)
 	if not MinX then
 		return
 	end
